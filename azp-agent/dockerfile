@@ -1,0 +1,95 @@
+FROM ubuntu:24.04
+ARG AGENT_VERSION=4.248.0
+
+# --- Feature toggles (pass via --build-arg; empty = feature not installed) ---
+ARG INSTALL_PODMAN=true
+ARG INSTALL_JAVA=17
+# INSTALL_ANDROID carries the Android build-tools version to install, e.g. 34.0.0; its major component is used as the platform (API) version. Requires INSTALL_JAVA to be set.
+ARG INSTALL_ANDROID=34.0.0
+# Current latest cmdline-tools build from https://developer.android.com/studio#command-tools; override via --build-arg to pin an older one.
+ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
+ARG INSTALL_POWERSHELL=7.4.6
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates curl jq git pipx iputils-ping libicu-dev tar unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Podman support (optional, nested containers) ---
+RUN if [ "$INSTALL_PODMAN" = "true" ]; then \
+      apt-get update && apt-get install -y \
+        podman fuse-overlayfs uidmap slirp4netns iptables \
+      && update-alternatives --set iptables /usr/sbin/iptables-legacy \
+      && update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy \
+      && mkdir -p /etc/containers \
+      && printf '[storage]\ndriver = "overlay"\nrunroot = "/run/containers/storage"\ngraphroot = "/var/lib/containers/storage"\n[storage.options.overlay]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
+        > /etc/containers/storage.conf \
+      && printf '[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n' \
+        > /etc/containers/containers.conf \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+# --- end Podman support ---
+
+# --- Java SDK (optional) ---
+RUN if [ -n "$INSTALL_JAVA" ]; then \
+      apt-get update && apt-get install -y "openjdk-${INSTALL_JAVA}-jdk" \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+ENV JAVA_HOME=${INSTALL_JAVA:+/usr/lib/jvm/default-java}
+ENV PATH="${JAVA_HOME:+${JAVA_HOME}/bin:}${PATH}"
+# --- end Java SDK ---
+
+# --- Android SDK (optional, requires INSTALL_JAVA to be set) ---
+ENV ANDROID_HOME=${INSTALL_ANDROID:+/opt/android-sdk}
+ENV ANDROID_SDK_ROOT=${ANDROID_HOME}
+ENV PATH="${ANDROID_HOME:+${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:}${PATH}"
+
+RUN if [ -n "$INSTALL_ANDROID" ]; then \
+      ANDROID_PLATFORM_VERSION="${INSTALL_ANDROID%%.*}" && \
+      mkdir -p "${ANDROID_HOME}/cmdline-tools" && \
+      curl -LsS -o /tmp/cmdline-tools.zip \
+        "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" && \
+      unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools" && \
+      mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" && \
+      rm /tmp/cmdline-tools.zip && \
+      yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null && \
+      "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+        "platform-tools" \
+        "platforms;android-${ANDROID_PLATFORM_VERSION}" \
+        "build-tools;${INSTALL_ANDROID}" > /dev/null; \
+    fi
+# --- end Android SDK ---
+
+# --- PowerShell Core (optional) ---
+RUN if [ -n "$INSTALL_POWERSHELL" ]; then \
+      case "$(uname -m)" in \
+        x86_64) PS_ARCH=x64 ;; \
+        aarch64) PS_ARCH=arm64 ;; \
+        *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
+      esac && \
+      curl -LsS -o /tmp/powershell.tar.gz \
+        "https://github.com/PowerShell/PowerShell/releases/download/v${INSTALL_POWERSHELL}/powershell-${INSTALL_POWERSHELL}-linux-${PS_ARCH}.tar.gz" && \
+      mkdir -p /opt/microsoft/powershell/7 && \
+      tar -xzf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7 && \
+      chmod +x /opt/microsoft/powershell/7/pwsh && \
+      ln -sf /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh && \
+      rm /tmp/powershell.tar.gz; \
+    fi
+# --- end PowerShell Core ---
+
+WORKDIR /azp/agent
+
+RUN case "$(uname -m)" in \
+      x86_64) AZP_ARCH=x64 ;; \
+      aarch64) AZP_ARCH=arm64 ;; \
+      *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
+    esac && \
+    curl -LsS -o agent.tar.gz \
+      "https://download.agent.dev.azure.com/agent/${AGENT_VERSION}/vsts-agent-linux-${AZP_ARCH}-${AGENT_VERSION}.tar.gz" && \
+    tar -xzf agent.tar.gz && \
+    rm agent.tar.gz && \
+    ./bin/installdependencies.sh
+
+COPY start.sh /azp/start.sh
+RUN chmod +x /azp/start.sh
+
+ENTRYPOINT ["/azp/start.sh"]
