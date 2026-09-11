@@ -1,0 +1,10 @@
+{
+  "agentVersion": "4.248.0",
+  "installPodman": "true",
+  "installJava": "17",
+  "installAndroid": "37.0.0",
+  "androidCmdlineToolsVersion": "15859902",
+  "installPowershell": "7.6.6",
+  "installDotnet": "10.0",
+  "installNode": "24.21.0"
+}

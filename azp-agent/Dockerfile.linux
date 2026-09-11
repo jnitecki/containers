@@ -5,10 +5,12 @@ ARG AGENT_VERSION=4.248.0
 ARG INSTALL_PODMAN=true
 ARG INSTALL_JAVA=17
 # INSTALL_ANDROID carries the Android build-tools version to install, e.g. 34.0.0; its major component is used as the platform (API) version. Requires INSTALL_JAVA to be set.
-ARG INSTALL_ANDROID=34.0.0
+ARG INSTALL_ANDROID=37.0.0
 # Current latest cmdline-tools build from https://developer.android.com/studio#command-tools; override via --build-arg to pin an older one.
 ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
-ARG INSTALL_POWERSHELL=7.4.6
+ARG INSTALL_POWERSHELL=7.6.6
+ARG INSTALL_DOTNET=10.0
+ARG INSTALL_NODE=24.21.0
 
 RUN apt-get update && apt-get install -y \
     ca-certificates curl jq git pipx iputils-ping libicu-dev tar unzip \
@@ -30,32 +32,45 @@ RUN if [ "$INSTALL_PODMAN" = "true" ]; then \
 # --- end Podman support ---
 
 # --- Java SDK (optional) ---
+# Ubuntu 24.04's openjdk packages don't create /usr/lib/jvm/default-java, so we
+# create it ourselves (architecture-aware) for a stable JAVA_HOME below.
 RUN if [ -n "$INSTALL_JAVA" ]; then \
       apt-get update && apt-get install -y "openjdk-${INSTALL_JAVA}-jdk" \
+      && ln -sfn "/usr/lib/jvm/java-${INSTALL_JAVA}-openjdk-$(dpkg --print-architecture)" /usr/lib/jvm/default-java \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 ENV JAVA_HOME=${INSTALL_JAVA:+/usr/lib/jvm/default-java}
 ENV PATH="${JAVA_HOME:+${JAVA_HOME}/bin:}${PATH}"
+ENV JDK_HOME_${INSTALL_JAVA}=${INSTALL_JAVA:+/usr/lib/jvm/default-java}
 # --- end Java SDK ---
 
 # --- Android SDK (optional, requires INSTALL_JAVA to be set) ---
 ENV ANDROID_HOME=${INSTALL_ANDROID:+/opt/android-sdk}
 ENV ANDROID_SDK_ROOT=${ANDROID_HOME}
 ENV PATH="${ANDROID_HOME:+${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:}${PATH}"
+ENV ANDROID_HOME_${INSTALL_ANDROID%%.*}=${INSTALL_ANDROID:+/opt/android-sdk}
 
 RUN if [ -n "$INSTALL_ANDROID" ]; then \
-      ANDROID_PLATFORM_VERSION="${INSTALL_ANDROID%%.*}" && \
+      ANDROID_PLATFORM_MAJOR="${INSTALL_ANDROID%%.*}" && \
+      ANDROID_PLATFORM_MAJOR_MINOR="${INSTALL_ANDROID%.*}" && \
       mkdir -p "${ANDROID_HOME}/cmdline-tools" && \
       curl -LsS -o /tmp/cmdline-tools.zip \
         "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" && \
       unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools" && \
       mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" && \
       rm /tmp/cmdline-tools.zip && \
-      yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null && \
-      "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+      SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" && \
+      yes | "$SDKMANAGER" --licenses > /dev/null && \
+      "$SDKMANAGER" \
         "platform-tools" \
-        "platforms;android-${ANDROID_PLATFORM_VERSION}" \
-        "build-tools;${INSTALL_ANDROID}" > /dev/null; \
+        "build-tools;${INSTALL_ANDROID}" > /dev/null && \
+      install_android_platform() { \
+        "$SDKMANAGER" "platforms;android-$1" > /dev/null 2>&1; \
+        [ -d "${ANDROID_HOME}/platforms/android-$1" ]; \
+      } && \
+      ( install_android_platform "$ANDROID_PLATFORM_MAJOR" \
+        || install_android_platform "$ANDROID_PLATFORM_MAJOR_MINOR" \
+        || { echo "error: could not install an Android platform package for INSTALL_ANDROID=${INSTALL_ANDROID} (tried platforms;android-${ANDROID_PLATFORM_MAJOR} and platforms;android-${ANDROID_PLATFORM_MAJOR_MINOR})" >&2; exit 1; } ); \
     fi
 # --- end Android SDK ---
 
@@ -66,15 +81,41 @@ RUN if [ -n "$INSTALL_POWERSHELL" ]; then \
         aarch64) PS_ARCH=arm64 ;; \
         *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
       esac && \
+      PS_MAJOR_VERSION="${INSTALL_POWERSHELL%%.*}" && \
       curl -LsS -o /tmp/powershell.tar.gz \
         "https://github.com/PowerShell/PowerShell/releases/download/v${INSTALL_POWERSHELL}/powershell-${INSTALL_POWERSHELL}-linux-${PS_ARCH}.tar.gz" && \
-      mkdir -p /opt/microsoft/powershell/7 && \
-      tar -xzf /tmp/powershell.tar.gz -C /opt/microsoft/powershell/7 && \
-      chmod +x /opt/microsoft/powershell/7/pwsh && \
-      ln -sf /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh && \
+      mkdir -p "/opt/microsoft/powershell/${PS_MAJOR_VERSION}" && \
+      tar -xzf /tmp/powershell.tar.gz -C "/opt/microsoft/powershell/${PS_MAJOR_VERSION}" && \
+      chmod +x "/opt/microsoft/powershell/${PS_MAJOR_VERSION}/pwsh" && \
+      ln -sf "/opt/microsoft/powershell/${PS_MAJOR_VERSION}/pwsh" /usr/bin/pwsh && \
       rm /tmp/powershell.tar.gz; \
     fi
+ENV pwsh=${INSTALL_POWERSHELL:+/usr/bin/pwsh}
+ENV PowerShell=${INSTALL_POWERSHELL:+/usr/bin/pwsh}
+ENV PWSH_${INSTALL_POWERSHELL%%.*}=${INSTALL_POWERSHELL:+/usr/bin/pwsh}
 # --- end PowerShell Core ---
+
+# --- .NET SDK (optional) ---
+RUN if [ -n "$INSTALL_DOTNET" ]; then \
+      curl -LsS https://dot.net/v1/dotnet-install.sh | bash -s -- --channel "$INSTALL_DOTNET" --install-dir /opt/dotnet; \
+    fi
+ENV DOTNET_ROOT=${INSTALL_DOTNET:+/opt/dotnet}
+ENV PATH="${DOTNET_ROOT:+${DOTNET_ROOT}:}${PATH}"
+ENV DOTNET_NOLOGO=${INSTALL_DOTNET:+1}
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=${INSTALL_DOTNET:+1}
+# --- end .NET SDK ---
+
+# --- Node.js (optional) ---
+# NodeSource's setup script is only published per major version (setup_<major>.x); it installs
+# whatever the latest nodejs package is for that major in NodeSource's apt repo, so INSTALL_NODE's
+# minor/patch components aren't pinned exactly by this install method.
+RUN if [ -n "$INSTALL_NODE" ]; then \
+      NODE_MAJOR="${INSTALL_NODE%%.*}" && \
+      curl -LsS "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - && \
+      apt-get install -y nodejs \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+# --- end Node.js ---
 
 WORKDIR /azp/agent
 
@@ -87,7 +128,9 @@ RUN case "$(uname -m)" in \
       "https://download.agent.dev.azure.com/agent/${AGENT_VERSION}/vsts-agent-linux-${AZP_ARCH}-${AGENT_VERSION}.tar.gz" && \
     tar -xzf agent.tar.gz && \
     rm agent.tar.gz && \
-    ./bin/installdependencies.sh
+    apt-get update && \
+    ./bin/installdependencies.sh && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY start.sh /azp/start.sh
 RUN chmod +x /azp/start.sh

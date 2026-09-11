@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Drop inherited variables with no value (e.g. from a disabled optional toolchain's
+# conditional ENV in the dockerfile) so they don't show up in the agent's environment block.
+for env_var in $(compgen -e); do
+  [ -z "${!env_var}" ] && unset "$env_var"
+done
+
 if [ -z "$AZP_URL" ]; then
   echo 1>&2 "error: missing AZP_URL environment variable"
   exit 1
@@ -23,6 +29,17 @@ if [ -n "$AZP_WORK" ]; then
 fi
 
 export AGENT_ALLOW_RUNASROOT="1"
+
+# Some build tools (e.g. Gradle toolchains) auto-detect JDKs via JAVA_HOME_<version>_<arch>;
+# derive both from the versioned/arch-suffixed real path behind the JAVA_HOME symlink.
+if [ -n "$JAVA_HOME" ]; then
+  java_real_home="$(readlink -f "$JAVA_HOME")"
+  if [[ "$(basename "$java_real_home")" =~ ^java-([0-9]+)-openjdk-(amd64|arm64)$ ]]; then
+    java_version="${BASH_REMATCH[1]}"
+    java_arch="$(echo "${BASH_REMATCH[2]/amd64/x64}" | tr '[:lower:]' '[:upper:]')"
+    export "JAVA_HOME_${java_version}_${java_arch}=$JAVA_HOME"
+  fi
+fi
 
 cleanup() {
   if [ -e config.sh ]; then

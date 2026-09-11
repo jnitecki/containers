@@ -4,26 +4,28 @@ param(
 	[Parameter(Mandatory=$false)][switch]$NoCache
 );
 
+. "$PSScriptRoot/install-common.ps1";
 
-# Find the latest version if not provided
-if ([String]::IsNullOrEmpty($version)) {
-	$response = Invoke-WebRequest -Uri "https://github.com/microsoft/azure-pipelines-agent/releases/latest" -UseBasicParsing;
-	$match = [Regex]::Match($response.Content, '/microsoft/azure-pipelines-agent/releases/tag/v(\d+\.\d+\.\d+)"');
-	if (-not $match.Success) {
-		Write-Error "Release version is not detected";
-		exit 1;
-	}
-	$version = $match.Groups[1].Value;
-	Write-Host "Using version: $version";
+Assert-VersionsInSync;
+$version = Resolve-AgentVersion -Version $version;
+
+# Register QEMU binfmt handlers so Podman can build for the non-native platform.
+# On Linux, Podman runs directly on the host; on Windows/macOS it runs inside the Podman Machine VM,
+# so the command must be run there instead. multiarch/qemu-user-static has no native arm64 image, which
+# causes an "Exec format error" on arm64 hosts (e.g. Apple Silicon); tonistiigi/binfmt is multi-arch and
+# is the maintained replacement.
+$binfmtArgs = ("run", "--rm", "--privileged", "docker.io/tonistiigi/binfmt", "--install", "all");
+if ($IsLinux) {
+	Start-Process -NoNewWindow -FilePath sudo -ArgumentList (@("podman") + $binfmtArgs) -PassThru -Wait | Out-Null;
+} else {
+	Start-Process -NoNewWindow -FilePath podman -ArgumentList (@("machine", "ssh", "--", "sudo", "podman") + $binfmtArgs) -PassThru -Wait | Out-Null;
 }
-
-Start-Process -NoNewWindow -FilePath podman -ArgumentList ("machine", "ssh", "--", "sudo", "podman", "run", "--rm", "--privileged", "docker.io/multiarch/qemu-user-static", "--reset", "-p", "yes") -PassThru -Wait | Out-Null;
 Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "docker.io/jnitecki/azp-agent:latest", "docker.io/jnitecki/azp-agent:$version", "jnitecki/azp-agent:$version") -PassThru -Wait | Out-Null;
-$buildArgs = @("build", "--platform", "linux/amd64,linux/arm64", "--squash", "-f", "dockerfile", "--manifest", "azp-agent:$version", "--manifest", "jnitecki/azp-agent:$version", "--build-arg", "AGENT_VERSION=$version", "--build-arg", "TARGETARCH=amd64");
+$buildArgs = @("build", "--platform", "linux/amd64,linux/arm64", "--squash", "-f", "Dockerfile.linux", "--manifest", "azp-agent:$version", "--manifest", "jnitecki/azp-agent:$version", "--build-arg", "AGENT_VERSION=$version") + (Get-ToolchainBuildArgs -Os Linux);
 if ($NoCache) {
 	$buildArgs += "--no-cache";
 }
-$buildArgs += "build-context";
+$buildArgs += "linux-context";
 
 Start-Process -noNewWindow -filePath podman -ArgumentList $buildArgs -PassThru -Wait | Out-Null;
 Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "azp-agent:$version", "docker.io/jnitecki/azp-agent:$version", "docker.io/jnitecki/azp-agent:latest") -PassThru -Wait | Out-Null;

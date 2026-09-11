@@ -1,0 +1,108 @@
+# escape=`
+# First-draft Windows variant, not yet build-verified (no Windows container host was
+# available when this was authored) — see README.md "Verification" notes before relying on it.
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+ARG AGENT_VERSION=4.248.0
+
+# --- Feature toggles (pass via --build-arg; empty = feature not installed) ---
+# No INSTALL_PODMAN here: rootless nested containers have no mature Windows-container
+# equivalent, so this toggle is Linux-only (see Dockerfile.linux).
+ARG INSTALL_JAVA=17
+# INSTALL_ANDROID carries the Android build-tools version to install, e.g. 34.0.0; its major component is used as the platform (API) version. Requires INSTALL_JAVA to be set.
+ARG INSTALL_ANDROID=37.0.0
+# Current latest cmdline-tools build from https://developer.android.com/studio#command-tools; override via --build-arg to pin an older one.
+ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
+ARG INSTALL_POWERSHELL=7.6.6
+ARG INSTALL_DOTNET=10.0
+ARG INSTALL_NODE=24.21.0
+
+# --- PowerShell 7 (pwsh) ---
+# Unconditional, unlike every other toolchain here: Servercore only ships Windows PowerShell 5.1,
+# and the entrypoint (start.ps1) itself needs pwsh to run. INSTALL_POWERSHELL still pins the
+# version installed, for parity with the Linux image's toggle.
+RUN $psMajor = $env:INSTALL_POWERSHELL.Split('.')[0]; `
+    Invoke-WebRequest -Uri "https://github.com/PowerShell/PowerShell/releases/download/v$($env:INSTALL_POWERSHELL)/PowerShell-$($env:INSTALL_POWERSHELL)-win-x64.msi" -OutFile C:\powershell.msi; `
+    Start-Process msiexec.exe -ArgumentList '/i', 'C:\powershell.msi', '/quiet', '/norestart' -Wait; `
+    Remove-Item C:\powershell.msi; `
+    [Environment]::SetEnvironmentVariable("PWSH_$psMajor", 'C:\Program Files\PowerShell\7\pwsh.exe', 'Machine')
+ENV pwsh="C:\Program Files\PowerShell\7\pwsh.exe"
+ENV PowerShell="C:\Program Files\PowerShell\7\pwsh.exe"
+ENV PATH="C:\Program Files\PowerShell\7;${PATH}"
+# --- end PowerShell 7 ---
+
+# --- Java SDK (optional) ---
+# Extracted to a fixed C:\openjdk path regardless of version (analogous to the Linux image's
+# default-java symlink) so JAVA_HOME/PATH below don't need to be version-aware.
+RUN if ($env:INSTALL_JAVA) { `
+      Invoke-WebRequest -Uri "https://aka.ms/download-jdk/microsoft-jdk-$($env:INSTALL_JAVA)-windows-x64.zip" -OutFile C:\jdk.zip; `
+      Expand-Archive -Path C:\jdk.zip -DestinationPath C:\jdk-extracted; `
+      Remove-Item C:\jdk.zip; `
+      Move-Item (Get-ChildItem C:\jdk-extracted | Select-Object -First 1).FullName C:\openjdk; `
+      Remove-Item C:\jdk-extracted -Recurse -Force; `
+      [Environment]::SetEnvironmentVariable("JDK_HOME_$($env:INSTALL_JAVA)", 'C:\openjdk', 'Machine'); `
+    }
+ENV JAVA_HOME=${INSTALL_JAVA:+C:\openjdk}
+ENV PATH="${INSTALL_JAVA:+C:\openjdk\bin;}${PATH}"
+# --- end Java SDK ---
+
+# --- Android SDK (optional, requires INSTALL_JAVA to be set) ---
+ENV ANDROID_HOME=${INSTALL_ANDROID:+C:\android-sdk}
+ENV ANDROID_SDK_ROOT=${ANDROID_HOME}
+ENV PATH="${INSTALL_ANDROID:+C:\android-sdk\cmdline-tools\latest\bin;C:\android-sdk\platform-tools;}${PATH}"
+
+RUN if ($env:INSTALL_ANDROID) { `
+      $androidPlatformVersion = $env:INSTALL_ANDROID.Split('.')[0]; `
+      New-Item -ItemType Directory -Force -Path C:\android-sdk\cmdline-tools | Out-Null; `
+      Invoke-WebRequest -Uri "https://dl.google.com/android/repository/commandlinetools-win-$($env:ANDROID_CMDLINE_TOOLS_VERSION)_latest.zip" -OutFile C:\cmdline-tools.zip; `
+      Expand-Archive -Path C:\cmdline-tools.zip -DestinationPath C:\android-sdk\cmdline-tools; `
+      Remove-Item C:\cmdline-tools.zip; `
+      Rename-Item C:\android-sdk\cmdline-tools\cmdline-tools latest; `
+      cmd /c "echo y | C:\android-sdk\cmdline-tools\latest\bin\sdkmanager.bat --licenses" ; `
+      cmd /c "C:\android-sdk\cmdline-tools\latest\bin\sdkmanager.bat platform-tools build-tools;$($env:INSTALL_ANDROID)" ; `
+      $androidPlatformMajorMinor = $env:INSTALL_ANDROID.Substring(0, $env:INSTALL_ANDROID.LastIndexOf('.')); `
+      cmd /c "C:\android-sdk\cmdline-tools\latest\bin\sdkmanager.bat platforms;android-$androidPlatformVersion" | Out-Null; `
+      if (-not (Test-Path "C:\android-sdk\platforms\android-$androidPlatformVersion")) { `
+        cmd /c "C:\android-sdk\cmdline-tools\latest\bin\sdkmanager.bat platforms;android-$androidPlatformMajorMinor" | Out-Null; `
+        if (-not (Test-Path "C:\android-sdk\platforms\android-$androidPlatformMajorMinor")) { `
+          throw "could not install an Android platform package for INSTALL_ANDROID=$($env:INSTALL_ANDROID) (tried platforms;android-$androidPlatformVersion and platforms;android-$androidPlatformMajorMinor)"; `
+        } `
+      } `
+      [Environment]::SetEnvironmentVariable("ANDROID_HOME_$androidPlatformVersion", 'C:\android-sdk', 'Machine'); `
+    }
+# --- end Android SDK ---
+
+# --- .NET SDK (optional) ---
+RUN if ($env:INSTALL_DOTNET) { `
+      Invoke-WebRequest -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile C:\dotnet-install.ps1; `
+      C:\dotnet-install.ps1 -Channel $env:INSTALL_DOTNET -InstallDir C:\dotnet; `
+      Remove-Item C:\dotnet-install.ps1; `
+    }
+ENV DOTNET_ROOT=${INSTALL_DOTNET:+C:\dotnet}
+ENV PATH="${INSTALL_DOTNET:+C:\dotnet;}${PATH}"
+ENV DOTNET_NOLOGO=${INSTALL_DOTNET:+1}
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=${INSTALL_DOTNET:+1}
+# --- end .NET SDK ---
+
+# --- Node.js (optional) ---
+RUN if ($env:INSTALL_NODE) { `
+      Invoke-WebRequest -Uri "https://nodejs.org/dist/v$($env:INSTALL_NODE)/node-v$($env:INSTALL_NODE)-x64.msi" -OutFile C:\node.msi; `
+      Start-Process msiexec.exe -ArgumentList '/i', 'C:\node.msi', '/quiet', '/norestart' -Wait; `
+      Remove-Item C:\node.msi; `
+    }
+# --- end Node.js ---
+
+WORKDIR C:\azp\agent
+
+# No Windows-arm64 vsts-agent build is published upstream, so unlike the Linux image there's no
+# architecture branch here.
+RUN Invoke-WebRequest -Uri "https://download.agent.dev.azure.com/agent/$($env:AGENT_VERSION)/vsts-agent-win-x64-$($env:AGENT_VERSION).zip" -OutFile agent.zip; `
+    Expand-Archive -Path agent.zip -DestinationPath .; `
+    Remove-Item agent.zip
+# The Linux image runs the agent's own ./bin/installdependencies.sh here; that script installs
+# Linux system libraries and has no Windows counterpart.
+
+COPY start.ps1 C:\azp\start.ps1
+
+ENTRYPOINT ["pwsh", "-File", "C:\\azp\\start.ps1"]
