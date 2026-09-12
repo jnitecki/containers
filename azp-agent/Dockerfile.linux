@@ -41,7 +41,7 @@ RUN if [ -n "$INSTALL_JAVA" ]; then \
     fi
 ENV JAVA_HOME=${INSTALL_JAVA:+/usr/lib/jvm/default-java}
 ENV PATH="${JAVA_HOME:+${JAVA_HOME}/bin:}${PATH}"
-ENV JDK_HOME_${INSTALL_JAVA}=${INSTALL_JAVA:+/usr/lib/jvm/default-java}
+ENV JAVA_HOME_${INSTALL_JAVA}=${INSTALL_JAVA:+/usr/lib/jvm/default-java}
 # --- end Java SDK ---
 
 # --- Android SDK (optional, requires INSTALL_JAVA to be set) ---

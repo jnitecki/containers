@@ -41,7 +41,7 @@ RUN if ($env:INSTALL_JAVA) { `
       Remove-Item C:\jdk.zip; `
       Move-Item (Get-ChildItem C:\jdk-extracted | Select-Object -First 1).FullName C:\openjdk; `
       Remove-Item C:\jdk-extracted -Recurse -Force; `
-      [Environment]::SetEnvironmentVariable("JDK_HOME_$($env:INSTALL_JAVA)", 'C:\openjdk', 'Machine'); `
+      [Environment]::SetEnvironmentVariable("JAVA_HOME_$($env:INSTALL_JAVA)", 'C:\openjdk', 'Machine'); `
     }
 ENV JAVA_HOME=${INSTALL_JAVA:+C:\openjdk}
 ENV PATH="${INSTALL_JAVA:+C:\openjdk\bin;}${PATH}"
