@@ -1,0 +1,46 @@
+FROM ubuntu:latest
+
+# Get prerequisites
+RUN apt update && \
+    apt install -y tzdata wget lbzip2 tor dnsutils linux-tools-virtual hwdata && \
+    update-alternatives --install /usr/local/bin/usbip usbip `ls /usr/lib/linux-tools/*/usbip | tail -n1` 20 && \
+    apt clean
+
+# Install Monero Node
+ARG DAEMON_VERSION=0.18.3.4
+RUN case "$(uname -m)" in \
+      x86_64) MONERO_ARCH=x64 ;; \
+      aarch64) MONERO_ARCH=armv8 ;; \
+      *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
+    esac && \
+    wget -O /tmp/monero.tar.bz2 "https://downloads.getmonero.org/cli/monero-linux-${MONERO_ARCH}-v${DAEMON_VERSION}.tar.bz2" && \
+    tar -xf /tmp/monero.tar.bz2 --directory /tmp && \
+    rm /tmp/monero.tar.bz2 && \
+    mkdir /monero-node && \
+    mv /tmp/*/* /monero-node && \
+    rmdir /tmp/* && \
+    mkdir /monero-data
+
+# Install P2Pool
+ARG P2POOL_VERSION=4.4
+RUN case "$(uname -m)" in \
+      x86_64) P2POOL_ARCH=x64 ;; \
+      aarch64) P2POOL_ARCH=aarch64 ;; \
+      *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
+    esac && \
+    wget -O /tmp/p2pool.tar.gz "https://github.com/SChernykh/p2pool/releases/download/v${P2POOL_VERSION}/p2pool-v${P2POOL_VERSION}-linux-${P2POOL_ARCH}.tar.gz" && \
+    tar -xzf /tmp/p2pool.tar.gz --directory /tmp && \
+    rm /tmp/p2pool.tar.gz && \
+    mkdir /p2pool && \
+    mv /tmp/*/* /p2pool && \
+    rmdir /tmp/*
+
+# Finalize
+RUN mkdir /logs
+
+# Prepare start
+COPY . .
+RUN chmod +x start.sh
+
+EXPOSE 3333/tcp
+ENTRYPOINT [ "./start.sh" ]

@@ -1,0 +1,10 @@
+ClientOnly 1
+Log notice file /logs/tor.log
+Log notice stdout
+ExtORPort auto
+DataDirectory /var/lib/tor
+ORPort auto
+HiddenServiceDir /var/lib/tor/p2pool
+HiddenServicePort 3333 127.0.0.1:3333
+SocksPort 9050
+ExtendAllowPrivateAddresses 1
