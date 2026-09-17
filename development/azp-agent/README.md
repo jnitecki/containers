@@ -66,6 +66,19 @@ docker run -e AZP_URL=https://dev.azure.com/<org> `
            docker.io/jnitecki/azp-agent:windows-latest
 ```
 
+`run.ps1` scripts the above: it pulls the current image, stops/removes any previous `azp-agent`/`azp-agent-NN` container(s), and starts fresh one(s). `-AzpUrl`/`-AzpToken`/`-AzpPool` are optional — if omitted, each falls back to the matching `AZP_URL`/`AZP_TOKEN`/`AZP_POOL` environment variable, then to a hardcoded default at the top of the script (empty by default; fill in locally, never commit real values), and the script fails fast if a value is still missing.
+
+```powershell
+# Single Linux agent named after this host, using the latest image
+./run.ps1 -AzpUrl https://dev.azure.com/<org> -AzpToken <pat> -AzpPool <pool>
+
+# Three Linux agents: azp-agent-01..03, named <hostname>-01..03
+./run.ps1 -AzpUrl https://dev.azure.com/<org> -AzpToken <pat> -AzpPool <pool> -InstanceCount 3
+
+# Windows variant, explicit version
+./run.ps1 -AzpUrl https://dev.azure.com/<org> -AzpToken <pat> -AzpPool <pool> -Os Windows -Version 4.248.0
+```
+
 ## Publish
 
 - **Linux** (`install-linux.ps1`) can run on any host — it builds a multi-arch (`linux/amd64,linux/arm64`) manifest with Podman, using QEMU (`tonistiigi/binfmt`) to cross-build the non-native architecture, and pushes it to `docker.io/jnitecki/azp-agent`.
