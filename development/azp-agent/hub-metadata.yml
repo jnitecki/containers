@@ -1,0 +1,4 @@
+short_description: "Self-hosted Azure Pipelines / Azure DevOps agent, Linux & Windows, optional Java/Android/.NET/Node"
+
+categories:
+  - integration-and-delivery

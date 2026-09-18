@@ -132,7 +132,7 @@ RUN case "$(uname -m)" in \
     ./bin/installdependencies.sh && \
     rm -rf /var/lib/apt/lists/*
 
-COPY start.sh /azp/start.sh
-RUN chmod +x /azp/start.sh
+COPY entrypoint.sh /azp/entrypoint.sh
+RUN chmod +x /azp/entrypoint.sh
 
-ENTRYPOINT ["/azp/start.sh"]
+ENTRYPOINT ["/azp/entrypoint.sh"]

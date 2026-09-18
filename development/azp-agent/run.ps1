@@ -55,7 +55,7 @@ $AzpToken = Resolve-Config -Name "AzpToken" -ParamValue $AzpToken -EnvName "AZP_
 $AzpPool = Resolve-Config -Name "AzpPool" -ParamValue $AzpPool -EnvName "AZP_POOL" -DefaultValue $DefaultAzpPool;
 
 # Windows publish tags are irregular: versioned tags get a "-windows" suffix (e.g. "4.248.0-windows"),
-# but the default tag is "windows-latest" rather than "latest-windows" - see install-windows.ps1/README.md.
+# but the default tag is "windows-latest" rather than "latest-windows" - see build-windows.ps1/README.md.
 if ($Os -eq "Windows") {
 	$tag = if ($Version -eq "latest") { "windows-latest" } else { "$Version-windows" };
 } else {

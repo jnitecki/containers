@@ -1,0 +1,25 @@
+FROM ubuntu:latest
+
+# Get prerequisites
+RUN apt update && apt install -y wget libexpat1 && apt clean
+
+# Install Verus Node
+ARG CLI_VERSION=1.2.17-6
+RUN case "$(uname -m)" in \
+      x86_64) VERUS_ARCH=x86_64 ;; \
+      aarch64) VERUS_ARCH=arm64 ;; \
+      *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
+    esac && \
+    wget -O /tmp/Verus-CLI-Linux.tgz "https://github.com/VerusCoin/VerusCoin/releases/download/v$CLI_VERSION/Verus-CLI-Linux-v$CLI_VERSION-${VERUS_ARCH}.tgz" && \
+    tar xzf /tmp/Verus-CLI-Linux.tgz -C /tmp && \
+    tar xzf "/tmp/Verus-CLI-Linux-v$CLI_VERSION-${VERUS_ARCH}.tar.gz"
+RUN /verus-cli/fetch-params
+
+# Prepare directories and fetch params
+RUN mkdir /VRSC && mkdir /logs
+
+# Prepare start
+COPY entrypoint.sh /
+RUN chmod +x entrypoint.sh
+
+ENTRYPOINT [ "./entrypoint.sh" ]

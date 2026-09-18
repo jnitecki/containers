@@ -4,7 +4,8 @@ param(
 	[Parameter(Mandatory=$false)][switch]$NoCache
 );
 
-. "$PSScriptRoot/install-common.ps1";
+. "$PSScriptRoot/build-common.ps1";
+. "$PSScriptRoot/../../scripts/dockerhub-common.ps1";
 
 Assert-VersionsInSync;
 $version = Resolve-AgentVersion -Version $version;
@@ -30,4 +31,11 @@ $buildArgs += "linux-context";
 Start-Process -noNewWindow -filePath podman -ArgumentList $buildArgs -PassThru -Wait | Out-Null;
 Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "azp-agent:$version", "docker.io/jnitecki/azp-agent:$version", "docker.io/jnitecki/azp-agent:latest") -PassThru -Wait | Out-Null;
 Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "push", "docker.io/jnitecki/azp-agent:$version") -PassThru -Wait | Out-Null;
-Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "push", "docker.io/jnitecki/azp-agent:latest") -PassThru -Wait | Out-Null;
+$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "push", "docker.io/jnitecki/azp-agent:latest") -PassThru -Wait;
+
+if ($pushResult.ExitCode -eq 0) {
+	$hubMetadata = Import-HubMetadata -Path "$PSScriptRoot/hub-metadata.yml";
+	Publish-DockerHubRepository -Repository "jnitecki/azp-agent" -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
+} else {
+	Write-Warning "Skipping Docker Hub README upload because the image push failed (exit code $($pushResult.ExitCode)).";
+}

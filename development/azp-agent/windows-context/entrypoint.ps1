@@ -83,7 +83,7 @@ Write-Header "2. Running Azure Pipelines agent..."
     exit 130
 })
 
-# NOTE: unlike start.sh's bash `trap ... EXIT INT TERM`, there is no single reliable PowerShell
+# NOTE: unlike entrypoint.sh's bash `trap ... EXIT INT TERM`, there is no single reliable PowerShell
 # mechanism that covers an external `docker stop`/container-stop signal the way POSIX SIGTERM
 # delivery does. The try/finally below covers normal completion and in-script errors, and
 # CancelKeyPress above covers Ctrl+C, but whether `docker stop` actually reaches this process in

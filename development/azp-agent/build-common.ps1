@@ -1,5 +1,5 @@
-# Shared helpers for install-linux.ps1 / install-windows.ps1. Dot-source this file:
-#   . "$PSScriptRoot/install-common.ps1"
+# Shared helpers for build-linux.ps1 / build-windows.ps1. Dot-source this file:
+#   . "$PSScriptRoot/build-common.ps1"
 
 # Maps each versions.json field to the Dockerfile ARG it feeds, and which Dockerfile(s) that
 # ARG is expected to exist in (INSTALL_PODMAN has no Windows counterpart).

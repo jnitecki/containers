@@ -40,7 +40,7 @@ RUN mkdir /logs
 
 # Prepare start
 COPY . .
-RUN chmod +x start.sh
+RUN chmod +x entrypoint.sh
 
 EXPOSE 3333/tcp
-ENTRYPOINT [ "./start.sh" ]
+ENTRYPOINT [ "./entrypoint.sh" ]

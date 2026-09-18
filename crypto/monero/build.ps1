@@ -5,6 +5,8 @@ param(
 	[Parameter(Mandatory=$false)][switch]$NoCache
 );
 
+. "$PSScriptRoot/../../scripts/dockerhub-common.ps1";
+
 # Find the latest daemon version if not provided
 if ([String]::IsNullOrEmpty($daemonVersion)) {
 	$response = Invoke-WebRequest -Uri "https://www.getmonero.org/downloads/#cli" -UseBasicParsing;
@@ -52,11 +54,11 @@ $buildArgs += "build-context";
 Start-Process -noNewWindow -filePath podman -ArgumentList $buildArgs -PassThru -Wait | Out-Null;
 Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "monero:$tag", "docker.io/jnitecki/monero:$tag", "docker.io/jnitecki/monero:latest") -PassThru -Wait | Out-Null;
 Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "push", "docker.io/jnitecki/monero:$tag") -PassThru -Wait | Out-Null;
-Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "push", "docker.io/jnitecki/monero:latest") -PassThru -Wait | Out-Null;
+$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "push", "docker.io/jnitecki/monero:latest") -PassThru -Wait;
 
-#podman run -d --rm -h $env:COMPUTERNAME -p 3333:3333 -e POOL_TYPE=mini -e WALLET_ADDRESS=44fdBjFCFh19v6y4SdfbwvY91dw8HrebabNeKofeAvzNZk1wbw1YF8EPbtzuaHgZ1uer8jjeHPMYz1CAsg3AryQyA8iwxDz -v d:\Crypto\Monero\Data:/monero-data -v d:\Crypto\Monero\Cache\p2pool.cache:/p2pool.cache -v d:\Crypto\Monero\Logs:/logs -v d:\Crypto\Monero\Stats:/stats -v d:\Crypto\Monero\Service:/var/lib/tor/p2pool --name monero jnitecki/monero:0.18.3.4
-
-# Consider adding hugepages
-
-# --cap-add SYS_ADMIN in docker command
-# sudo sysctl vm.nr_hugepages=3072 in docker script
+if ($pushResult.ExitCode -eq 0) {
+	$hubMetadata = Import-HubMetadata -Path "$PSScriptRoot/hub-metadata.yml";
+	Publish-DockerHubRepository -Repository "jnitecki/monero" -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
+} else {
+	Write-Warning "Skipping Docker Hub README upload because the image push failed (exit code $($pushResult.ExitCode)).";
+}

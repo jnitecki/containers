@@ -20,7 +20,7 @@ ARG INSTALL_NODE=24.21.0
 
 # --- PowerShell 7 (pwsh) ---
 # Unconditional, unlike every other toolchain here: Servercore only ships Windows PowerShell 5.1,
-# and the entrypoint (start.ps1) itself needs pwsh to run. INSTALL_POWERSHELL still pins the
+# and the entrypoint (entrypoint.ps1) itself needs pwsh to run. INSTALL_POWERSHELL still pins the
 # version installed, for parity with the Linux image's toggle.
 RUN $psMajor = $env:INSTALL_POWERSHELL.Split('.')[0]; `
     Invoke-WebRequest -Uri "https://github.com/PowerShell/PowerShell/releases/download/v$($env:INSTALL_POWERSHELL)/PowerShell-$($env:INSTALL_POWERSHELL)-win-x64.msi" -OutFile C:\powershell.msi; `
@@ -103,6 +103,6 @@ RUN Invoke-WebRequest -Uri "https://download.agent.dev.azure.com/agent/$($env:AG
 # The Linux image runs the agent's own ./bin/installdependencies.sh here; that script installs
 # Linux system libraries and has no Windows counterpart.
 
-COPY start.ps1 C:\azp\start.ps1
+COPY entrypoint.ps1 C:\azp\entrypoint.ps1
 
-ENTRYPOINT ["pwsh", "-File", "C:\\azp\\start.ps1"]
+ENTRYPOINT ["pwsh", "-File", "C:\\azp\\entrypoint.ps1"]
