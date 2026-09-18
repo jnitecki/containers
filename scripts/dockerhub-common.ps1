@@ -207,11 +207,11 @@ function Publish-DockerHubRepository {
 	}
 
 	if ($validCategories.Count -gt 0) {
-		Write-Host "Attempting Docker Hub category update for $Repository (unconfirmed whether Docker Hub persists this via API)...";
+		Write-Host "Updating Docker Hub categories for $Repository...";
 		try {
 			Invoke-RestMethod -Uri "https://hub.docker.com/v2/repositories/$Repository" -Method Patch -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body (@{ categories = $validCategories } | ConvertTo-Json) | Out-Null;
 		} catch {
-			Write-Warning "Failed to update Docker Hub categories (this field isn't officially documented, so this may simply not be supported): $_";
+			Write-Warning "Failed to update Docker Hub categories: $_";
 		}
 	}
 }
