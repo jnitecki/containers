@@ -1,7 +1,7 @@
 FROM ubuntu:latest
 
 # Get prerequisites
-RUN apt update && apt install -y wget libexpat1 && apt clean
+RUN apt-get update && apt-get install -y wget libexpat1 && apt-get clean
 
 # Install Verus Node
 ARG CLI_VERSION=1.2.17-6
