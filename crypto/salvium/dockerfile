@@ -1,0 +1,27 @@
+FROM ubuntu:latest
+
+# Get prerequisites
+RUN apt-get update && apt-get install -y wget unzip && apt-get clean
+
+# Install Salvium Node
+ARG CLI_VERSION=1.1.3c
+RUN case "$(uname -m)" in \
+      x86_64) SALVIUM_ARCH=x86_64 ;; \
+      aarch64) SALVIUM_ARCH=aarch64 ;; \
+      *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
+    esac && \
+    wget -O /tmp/salvium.zip "https://github.com/salvium/salvium/releases/download/v${CLI_VERSION}/salvium-v${CLI_VERSION}-ubuntu22.04-linux-${SALVIUM_ARCH}.zip" && \
+    mkdir /salvium-node && \
+    unzip /tmp/salvium.zip -d /salvium-node && \
+    rm /tmp/salvium.zip && \
+    chmod +x /salvium-node/* && \
+    mkdir /salvium-data
+
+# Finalize
+RUN mkdir /logs
+
+# Prepare start
+COPY entrypoint.sh /
+RUN chmod +x entrypoint.sh
+
+ENTRYPOINT [ "./entrypoint.sh" ]
