@@ -10,6 +10,7 @@ An index of all containers in this repository.
 | [monero](crypto/monero/) | Crypto | Monero (`monerod`) node paired with a P2Pool mining node, run behind Tor, with a multi-arch (amd64/arm64) build. |
 | [salvium](crypto/salvium/) | Crypto | Salvium (`salviumd`) CLI node, with a multi-arch (amd64/arm64) build. |
 | [verus](crypto/verus/) | Crypto | Verus (`verusd`) CLI node, with a multi-arch (amd64/arm64) build. |
+| [zephyr](crypto/zephyr/) | Crypto | Zephyr Protocol (`zephyrd`) CLI node, with a multi-arch (amd64/arm64) build. |
 
 ## By Category
 
@@ -20,6 +21,7 @@ An index of all containers in this repository.
 | [monero](crypto/monero/) | Monero (`monerod`) node paired with a P2Pool mining node, run behind Tor, with a multi-arch (amd64/arm64) build. |
 | [salvium](crypto/salvium/) | Salvium (`salviumd`) CLI node, with a multi-arch (amd64/arm64) build. |
 | [verus](crypto/verus/) | Verus (`verusd`) CLI node, with a multi-arch (amd64/arm64) build. |
+| [zephyr](crypto/zephyr/) | Zephyr Protocol (`zephyrd`) CLI node, with a multi-arch (amd64/arm64) build. |
 
 ### Development
 

@@ -1,0 +1,31 @@
+FROM ubuntu:latest
+
+# Get prerequisites
+RUN apt-get update && apt-get install -y wget unzip && apt-get clean
+
+# Install Zephyr Node
+ARG BASE_VERSION=2.3.0
+ARG CLI_VERSION=2.3.0
+RUN case "$(uname -m)" in \
+      x86_64) ZEPHYR_ARCH=linux ;; \
+      aarch64) ZEPHYR_ARCH=aarch ;; \
+      *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
+    esac && \
+    wget -O /tmp/zephyr.zip "https://github.com/ZephyrProtocol/zephyr/releases/download/v${BASE_VERSION}/zephyr-cli-${ZEPHYR_ARCH}-v${CLI_VERSION}.zip" && \
+    mkdir /tmp/zephyr-extracted && \
+    unzip /tmp/zephyr.zip -d /tmp/zephyr-extracted && \
+    rm /tmp/zephyr.zip && \
+    mkdir /zephyr-node && \
+    mv /tmp/zephyr-extracted/zephyr-cli-*/* /zephyr-node && \
+    rm -rf /tmp/zephyr-extracted && \
+    chmod +x /zephyr-node/* && \
+    mkdir /zephyr-data
+
+# Finalize
+RUN mkdir /logs
+
+# Prepare start
+COPY entrypoint.sh /
+RUN chmod +x entrypoint.sh
+
+ENTRYPOINT [ "./entrypoint.sh" ]
