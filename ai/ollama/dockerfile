@@ -1,0 +1,12 @@
+FROM dustynv/ollama:r36.4.0
+
+ARG OLLAMA_VERSION=0.24.0
+
+# zstd is only needed by install.sh to extract the .tar.zst release archives, so it is removed again
+# in the same layer once Ollama is installed.
+RUN apt-get update && \
+    apt-get install -y zstd && \
+    curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=${OLLAMA_VERSION} sh && \
+    apt-get purge -y --auto-remove zstd && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*

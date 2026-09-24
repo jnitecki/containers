@@ -1,0 +1,4 @@
+short_description: "Ollama LLM server for NVIDIA Jetson (JetPack 6, arm64) with GPU acceleration."
+
+categories:
+  - machine-learning-and-ai
