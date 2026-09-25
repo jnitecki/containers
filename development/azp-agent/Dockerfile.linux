@@ -3,6 +3,9 @@ ARG AGENT_VERSION=4.248.0
 
 # --- Feature toggles (pass via --build-arg; empty = feature not installed) ---
 ARG INSTALL_PODMAN=true
+ARG INSTALL_BUILD_ESSENTIAL=true
+# INSTALL_PYTHON_DEV requires INSTALL_BUILD_ESSENTIAL=true (native extension builds need gcc).
+ARG INSTALL_PYTHON_DEV=true
 ARG INSTALL_JAVA=17
 # INSTALL_ANDROID carries the Android build-tools version to install, e.g. 34.0.0; its major component is used as the platform (API) version. Requires INSTALL_JAVA to be set.
 ARG INSTALL_ANDROID=37.0.0
@@ -30,6 +33,25 @@ RUN if [ "$INSTALL_PODMAN" = "true" ]; then \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 # --- end Podman support ---
+
+# --- Build essentials (optional, native C/C++ toolchain: gcc, g++, make, libc dev headers) ---
+RUN if [ "$INSTALL_BUILD_ESSENTIAL" = "true" ]; then \
+      apt-get update && apt-get install -y build-essential \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+# --- end Build essentials ---
+
+# --- Python development headers (optional, requires INSTALL_BUILD_ESSENTIAL=true) ---
+# Ubuntu 24.04 has no python-dev package; python3-dev provides Python.h and python3-config
+# for building native extension modules.
+RUN if [ "$INSTALL_PYTHON_DEV" = "true" ]; then \
+      if [ "$INSTALL_BUILD_ESSENTIAL" != "true" ]; then \
+        echo "error: INSTALL_PYTHON_DEV=true requires INSTALL_BUILD_ESSENTIAL=true" >&2; exit 1; \
+      fi && \
+      apt-get update && apt-get install -y python3-dev \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+# --- end Python development headers ---
 
 # --- Java SDK (optional) ---
 # Ubuntu 24.04's openjdk packages don't create /usr/lib/jvm/default-java, so we

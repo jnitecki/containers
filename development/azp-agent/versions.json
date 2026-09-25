@@ -1,6 +1,8 @@
 {
   "agentVersion": "4.248.0",
   "installPodman": "true",
+  "installBuildEssential": "true",
+  "installPythonDev": "true",
   "installJava": "17",
   "installAndroid": "37.0.0",
   "androidCmdlineToolsVersion": "15859902",

@@ -2,9 +2,12 @@
 #   . "$PSScriptRoot/build-common.ps1"
 
 # Maps each versions.json field to the Dockerfile ARG it feeds, and which Dockerfile(s) that
-# ARG is expected to exist in (INSTALL_PODMAN has no Windows counterpart).
+# ARG is expected to exist in (INSTALL_PODMAN, INSTALL_BUILD_ESSENTIAL and
+# INSTALL_PYTHON_DEV have no Windows counterpart).
 $script:VersionArgMap = @(
     @{ Field = "installPodman";              Arg = "INSTALL_PODMAN";                Linux = $true; Windows = $false }
+    @{ Field = "installBuildEssential";      Arg = "INSTALL_BUILD_ESSENTIAL";       Linux = $true; Windows = $false }
+    @{ Field = "installPythonDev";           Arg = "INSTALL_PYTHON_DEV";            Linux = $true; Windows = $false }
     @{ Field = "installJava";                Arg = "INSTALL_JAVA";                  Linux = $true; Windows = $true }
     @{ Field = "installAndroid";             Arg = "INSTALL_ANDROID";               Linux = $true; Windows = $true }
     @{ Field = "androidCmdlineToolsVersion"; Arg = "ANDROID_CMDLINE_TOOLS_VERSION"; Linux = $true; Windows = $true }

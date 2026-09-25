@@ -41,6 +41,16 @@ if [ -n "$JAVA_HOME" ]; then
   fi
 fi
 
+# Expose the native toolchain as agent capabilities (usable in pipeline demands). Derived at
+# startup because the versions come from the installed apt packages, not a pinned build arg.
+if gcc_path="$(command -v gcc)"; then
+  export GCC="$(gcc -dumpfullversion)"
+  export "GCC_${GCC%%.*}=$gcc_path"
+fi
+if command -v python3-config > /dev/null; then
+  export PYTHON_DEV="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+fi
+
 cleanup() {
   if [ -e config.sh ]; then
     print_header "Cleanup. Removing Azure Pipelines agent..."

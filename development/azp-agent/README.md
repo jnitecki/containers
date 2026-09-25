@@ -1,6 +1,6 @@
 # azp-agent
 
-Containerized self-hosted agent for Azure Pipelines / Azure DevOps, with optional Java, Android SDK, PowerShell Core, .NET SDK, and Node.js toolchains.
+Containerized self-hosted agent for Azure Pipelines / Azure DevOps, with optional build essentials and Python dev headers (Linux), Java, Android SDK, PowerShell Core, .NET SDK, and Node.js toolchains.
 
 | Variant | Image tag |
 |---------|-----------|
@@ -31,6 +31,24 @@ docker run -e AZP_URL=https://dev.azure.com/<org> `
            -e AZP_TOKEN=<pat> `
            -e AZP_POOL=<pool> `
            docker.io/jnitecki/azp-agent:windows-latest
+```
+
+### Toolchain capabilities (Linux)
+
+The Linux agent reports these variables as capabilities, so pipelines can `demand` them:
+
+| Variable | Set when | Value |
+|----------|----------|-------|
+| `GCC` | gcc (`build-essential`) is installed | Full gcc version, e.g. `13.3.0` |
+| `GCC_<major>` | gcc (`build-essential`) is installed | Path to gcc, e.g. `GCC_13=/usr/bin/gcc` |
+| `PYTHON_DEV` | Python development headers (`python3-dev`) are installed | Python version the headers are for, e.g. `3.12` |
+
+```yaml
+pool:
+  name: <pool>
+  demands:
+  - GCC_13
+  - PYTHON_DEV -equals 3.12
 ```
 
 If you have this repository cloned, `run.ps1` scripts the above: it pulls the current image, stops/removes any previous `azp-agent`/`azp-agent-NN` container(s), and starts fresh one(s). `-AzpUrl`/`-AzpToken`/`-AzpPool` are optional — if omitted, each falls back to the matching `AZP_URL`/`AZP_TOKEN`/`AZP_POOL` environment variable, then to a hardcoded default at the top of the script (empty by default; fill in locally, never commit real values), and the script fails fast if a value is still missing.

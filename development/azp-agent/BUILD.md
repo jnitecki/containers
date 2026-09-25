@@ -29,6 +29,8 @@ docker build -f Dockerfile.windows -t azp-agent:windows windows-context
 |--------------------------------|--------------------------------------------------------------------------|:-----:|:-------:|
 | `agentVersion`                  | Azure Pipelines agent version to download                               |   ✓   |    ✓    |
 | `installPodman`                 | Nested/rootless Podman for containerized jobs                           |   ✓   |    —    |
+| `installBuildEssential`         | Ubuntu `build-essential` (gcc, g++, make, libc dev headers) for native builds, e.g. npm native addons; `true` = installed | ✓ | — |
+| `installPythonDev`              | Python development headers (`python3-dev`: `Python.h`, `python3-config`) for building native Python extensions; `true` = installed. Requires `installBuildEssential` = `true` — the build fails otherwise | ✓ | — |
 | `installJava`                   | OpenJDK version; empty = not installed                                  |   ✓   |    ✓    |
 | `installAndroid`                | Android build-tools version; empty = not installed. Platform (API) version is derived from its major component | ✓ | ✓ |
 | `androidCmdlineToolsVersion`    | Android cmdline-tools build number; independent of `installAndroid`     |   ✓   |    ✓    |
@@ -36,12 +38,16 @@ docker build -f Dockerfile.windows -t azp-agent:windows windows-context
 | `installDotnet`                 | .NET SDK channel; empty = not installed                                 |   ✓   |    ✓    |
 | `installNode`                   | Node.js version; empty = not installed                                  |   ✓   |    ✓    |
 
-`installPodman` has no Windows counterpart — rootless nested containers have no comparably mature Windows-container equivalent, so it's Linux-only.
+`installPodman` has no Windows counterpart — rootless nested containers have no comparably mature Windows-container equivalent, so it's Linux-only. `installBuildEssential` is Linux-only too — it maps to an Ubuntu apt meta-package; a Windows equivalent (Visual Studio Build Tools) is not part of this image. `installPythonDev` depends on it and is Linux-only for the same reason.
+
+Neither package is version-pinned (both come from Ubuntu's apt repo), so `entrypoint.sh` detects them at container start and exports `GCC` (full gcc version, from `gcc -dumpfullversion`), `GCC_<major>` (path to `gcc` as resolved on `PATH`, e.g. `GCC_13=/usr/bin/gcc`) and `PYTHON_DEV` (`<major>.<minor>` of the Python the headers belong to) before the agent captures its environment — the same way it derives `JAVA_HOME_<version>_<arch>`. A disabled toggle means the tool is absent, so its variable is simply not set.
 
 Example disabling everything but Podman on Linux:
 
 ```sh
 docker build -f Dockerfile.linux \
+  --build-arg INSTALL_BUILD_ESSENTIAL="" \
+  --build-arg INSTALL_PYTHON_DEV="" \
   --build-arg INSTALL_JAVA="" \
   --build-arg INSTALL_ANDROID="" \
   --build-arg INSTALL_POWERSHELL="" \
