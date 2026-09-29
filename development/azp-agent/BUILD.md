@@ -34,13 +34,16 @@ docker build -f Dockerfile.windows -t azp-agent:windows windows-context
 | `installJava`                   | OpenJDK version; empty = not installed                                  |   ✓   |    ✓    |
 | `installAndroid`                | Android build-tools version; empty = not installed. Platform (API) version is derived from its major component | ✓ | ✓ |
 | `androidCmdlineToolsVersion`    | Android cmdline-tools build number; independent of `installAndroid`     |   ✓   |    ✓    |
+| `installAndroidEmulator`        | Android emulator. An API level (e.g. `36`) installs the `emulator` package plus `system-images;android-<level>;default;x86_64`; `true` installs the emulator only, no system image; empty = not installed. Requires `installAndroid` to be set — the build fails otherwise. amd64 only: Google publishes no emulator for Linux arm64, so the arm64 image validates the value but skips the install, with a warning — shown by `build-linux.ps1` before the build starts and again inside the arm64 build step | ✓ | — |
 | `installPowershell`             | PowerShell Core (`pwsh`) version; empty = not installed on Linux. Always installed on Windows (the entrypoint itself needs it), but still version-pinned by this field | ✓ | ✓ |
 | `installDotnet`                 | .NET SDK channel; empty = not installed                                 |   ✓   |    ✓    |
 | `installNode`                   | Node.js version; empty = not installed                                  |   ✓   |    ✓    |
 
-`installPodman` has no Windows counterpart — rootless nested containers have no comparably mature Windows-container equivalent, so it's Linux-only. `installBuildEssential` is Linux-only too — it maps to an Ubuntu apt meta-package; a Windows equivalent (Visual Studio Build Tools) is not part of this image. `installPythonDev` depends on it and is Linux-only for the same reason.
+`installPodman` has no Windows counterpart — rootless nested containers have no comparably mature Windows-container equivalent, so it's Linux-only. `installBuildEssential` is Linux-only too — it maps to an Ubuntu apt meta-package; a Windows equivalent (Visual Studio Build Tools) is not part of this image. `installPythonDev` depends on it and is Linux-only for the same reason. `installAndroidEmulator` is Linux-only because the emulator needs hardware acceleration (KVM), which Windows containers can't provide — and within Linux it only takes effect on amd64, since no Linux arm64 emulator exists.
 
 Neither package is version-pinned (both come from Ubuntu's apt repo), so `entrypoint.sh` detects them at container start and exports `GCC` (full gcc version, from `gcc -dumpfullversion`), `GCC_<major>` (path to `gcc` as resolved on `PATH`, e.g. `GCC_13=/usr/bin/gcc`) and `PYTHON_DEV` (`<major>.<minor>` of the Python the headers belong to) before the agent captures its environment — the same way it derives `JAVA_HOME_<version>_<arch>`. A disabled toggle means the tool is absent, so its variable is simply not set.
+
+The Android emulator is handled the same way, but installing it is not enough on its own: `entrypoint.sh` runs `$ANDROID_HOME/emulator/emulator -accel-check` at start and exports `ANDROID_EMULATOR` (path to the emulator binary) and `ANDROID_EMULATOR_<api>` (the same path, one per installed `system-images/android-<api>`) only if that check succeeds, i.e. only when the container can actually use hardware acceleration (`/dev/kvm`).
 
 Example disabling everything but Podman on Linux:
 
@@ -50,6 +53,7 @@ docker build -f Dockerfile.linux \
   --build-arg INSTALL_PYTHON_DEV="" \
   --build-arg INSTALL_JAVA="" \
   --build-arg INSTALL_ANDROID="" \
+  --build-arg INSTALL_ANDROID_EMULATOR="" \
   --build-arg INSTALL_POWERSHELL="" \
   --build-arg INSTALL_DOTNET="" \
   --build-arg INSTALL_NODE="" \

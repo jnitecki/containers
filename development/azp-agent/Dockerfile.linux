@@ -11,6 +11,10 @@ ARG INSTALL_JAVA=17
 ARG INSTALL_ANDROID=37.0.0
 # Current latest cmdline-tools build from https://developer.android.com/studio#command-tools; override via --build-arg to pin an older one.
 ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
+# INSTALL_ANDROID_EMULATOR: an Android API level (e.g. 36) installs the emulator plus that level's default
+# x86_64 system image; "true" installs the emulator only. Requires INSTALL_ANDROID to be set. Ignored on
+# arm64: no Android emulator is published for Linux arm64 hosts.
+ARG INSTALL_ANDROID_EMULATOR=36
 ARG INSTALL_POWERSHELL=7.6.6
 ARG INSTALL_DOTNET=10.0
 ARG INSTALL_NODE=24.21.0
@@ -95,6 +99,38 @@ RUN if [ -n "$INSTALL_ANDROID" ]; then \
         || { echo "error: could not install an Android platform package for INSTALL_ANDROID=${INSTALL_ANDROID} (tried platforms;android-${ANDROID_PLATFORM_MAJOR} and platforms;android-${ANDROID_PLATFORM_MAJOR_MINOR})" >&2; exit 1; } ); \
     fi
 # --- end Android SDK ---
+
+# --- Android emulator (optional, requires INSTALL_ANDROID to be set) ---
+# Only installed here; entrypoint.sh reports it as a capability only if hardware acceleration
+# (-accel-check, i.e. a usable /dev/kvm) is available at container start.
+RUN if [ -n "$INSTALL_ANDROID_EMULATOR" ]; then \
+      if [ -z "$INSTALL_ANDROID" ]; then \
+        echo "error: INSTALL_ANDROID_EMULATOR requires INSTALL_ANDROID to be set" >&2; exit 1; \
+      fi && \
+      case "$INSTALL_ANDROID_EMULATOR" in \
+        true|*[!0-9]*) ;; \
+        *) EMULATOR_API="$INSTALL_ANDROID_EMULATOR" ;; \
+      esac && \
+      if [ "$INSTALL_ANDROID_EMULATOR" != "true" ] && [ -z "$EMULATOR_API" ]; then \
+        echo "error: INSTALL_ANDROID_EMULATOR must be 'true' or an Android API level, got '${INSTALL_ANDROID_EMULATOR}'" >&2; exit 1; \
+      fi && \
+      case "$(uname -m)" in \
+        x86_64) EMULATOR_ABI=x86_64 ;; \
+        aarch64) echo "warning: no Android emulator is published for Linux arm64, ignoring INSTALL_ANDROID_EMULATOR=${INSTALL_ANDROID_EMULATOR}" >&2 && exit 0 ;; \
+        *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
+      esac && \
+      EMULATOR_SYSTEM_IMAGE="${EMULATOR_API:+system-images;android-${EMULATOR_API};default;${EMULATOR_ABI}}" && \
+      yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --install \
+        "emulator" ${EMULATOR_SYSTEM_IMAGE:+"$EMULATOR_SYSTEM_IMAGE"} > /dev/null && \
+      if [ ! -x "${ANDROID_HOME}/emulator/emulator" ]; then \
+        echo "error: could not install the Android emulator package" >&2; exit 1; \
+      fi && \
+      if [ -n "$EMULATOR_SYSTEM_IMAGE" ] \
+         && [ ! -d "${ANDROID_HOME}/system-images/android-${INSTALL_ANDROID_EMULATOR}/default/${EMULATOR_ABI}" ]; then \
+        echo "error: could not install ${EMULATOR_SYSTEM_IMAGE}" >&2; exit 1; \
+      fi; \
+    fi
+# --- end Android emulator ---
 
 # --- PowerShell Core (optional) ---
 RUN if [ -n "$INSTALL_POWERSHELL" ]; then \

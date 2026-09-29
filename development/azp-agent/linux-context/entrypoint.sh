@@ -50,6 +50,19 @@ fi
 if command -v python3-config > /dev/null; then
   export PYTHON_DEV="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 fi
+# The emulator is only usable with hardware acceleration (e.g. /dev/kvm passed into the
+# container), so report it only when -accel-check succeeds, plus one ANDROID_EMULATOR_<api>
+# per installed system image.
+android_emulator="$ANDROID_HOME/emulator/emulator"
+if [ -n "$ANDROID_HOME" ] && [ -x "$android_emulator" ] && "$android_emulator" -accel-check > /dev/null 2>&1; then
+  export ANDROID_EMULATOR="$android_emulator"
+  for system_image_dir in "$ANDROID_HOME"/system-images/android-*; do
+    if [[ "$(basename "$system_image_dir")" =~ ^android-([0-9]+)$ ]]; then
+      export "ANDROID_EMULATOR_${BASH_REMATCH[1]}=$android_emulator"
+    fi
+  done
+fi
+unset android_emulator
 
 cleanup() {
   if [ -e config.sh ]; then

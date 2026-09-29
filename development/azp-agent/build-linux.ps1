@@ -8,6 +8,13 @@ param(
 . "$PSScriptRoot/../../scripts/dockerhub-common.ps1";
 
 Assert-VersionsInSync;
+
+# Both platforms are always built, but no Android emulator exists for Linux arm64, so the arm64 image
+# silently skips it - say so up front rather than only inside the arm64 build step's log.
+$pins = Get-PinnedVersions;
+if (-not [String]::IsNullOrEmpty([String]$pins.installAndroidEmulator)) {
+	Write-Warning "installAndroidEmulator is set ('$($pins.installAndroidEmulator)'), but no Android emulator exists for Linux arm64 - the linux/arm64 image will be built without it.";
+}
 $version = Resolve-AgentVersion -Version $version;
 
 # Register QEMU binfmt handlers so Podman can build for the non-native platform.
