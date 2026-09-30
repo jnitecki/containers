@@ -4,8 +4,9 @@ FROM ubuntu:latest
 RUN apt-get update && apt-get install -y wget libexpat1 && apt-get clean
 
 # Install Verus Node
-ARG CLI_VERSION=1.2.17-6
-RUN case "$(uname -m)" in \
+ARG CLI_VERSION
+RUN [ -n "$CLI_VERSION" ] || { echo "error: CLI_VERSION build arg is required" >&2; exit 1; } && \
+    case "$(uname -m)" in \
       x86_64) VERUS_ARCH=x86_64 ;; \
       aarch64) VERUS_ARCH=arm64 ;; \
       *) echo "unsupported arch $(uname -m)" && exit 1 ;; \

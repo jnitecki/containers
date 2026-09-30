@@ -4,9 +4,11 @@ FROM ubuntu:latest
 RUN apt-get update && apt-get install -y wget unzip && apt-get clean
 
 # Install Zephyr Node
-ARG BASE_VERSION=2.3.0
-ARG CLI_VERSION=2.3.0
-RUN case "$(uname -m)" in \
+ARG BASE_VERSION
+ARG CLI_VERSION
+RUN [ -n "$BASE_VERSION" ] || { echo "error: BASE_VERSION build arg is required" >&2; exit 1; } && \
+    [ -n "$CLI_VERSION" ] || { echo "error: CLI_VERSION build arg is required" >&2; exit 1; } && \
+    case "$(uname -m)" in \
       x86_64) ZEPHYR_ARCH=linux ;; \
       aarch64) ZEPHYR_ARCH=aarch ;; \
       *) echo "unsupported arch $(uname -m)" && exit 1 ;; \

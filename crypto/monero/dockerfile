@@ -7,8 +7,9 @@ RUN apt-get update && \
     apt-get clean
 
 # Install Monero Node
-ARG DAEMON_VERSION=0.18.3.4
-RUN case "$(uname -m)" in \
+ARG DAEMON_VERSION
+RUN [ -n "$DAEMON_VERSION" ] || { echo "error: DAEMON_VERSION build arg is required" >&2; exit 1; } && \
+    case "$(uname -m)" in \
       x86_64) MONERO_ARCH=x64 ;; \
       aarch64) MONERO_ARCH=armv8 ;; \
       *) echo "unsupported arch $(uname -m)" && exit 1 ;; \
@@ -22,8 +23,9 @@ RUN case "$(uname -m)" in \
     mkdir /monero-data
 
 # Install P2Pool
-ARG P2POOL_VERSION=4.4
-RUN case "$(uname -m)" in \
+ARG P2POOL_VERSION
+RUN [ -n "$P2POOL_VERSION" ] || { echo "error: P2POOL_VERSION build arg is required" >&2; exit 1; } && \
+    case "$(uname -m)" in \
       x86_64) P2POOL_ARCH=x64 ;; \
       aarch64) P2POOL_ARCH=aarch64 ;; \
       *) echo "unsupported arch $(uname -m)" && exit 1 ;; \

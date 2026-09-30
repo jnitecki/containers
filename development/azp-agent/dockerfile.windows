@@ -4,25 +4,30 @@
 FROM mcr.microsoft.com/windows/servercore:ltsc2022
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
-ARG AGENT_VERSION=4.248.0
+# No version defaults: the build scripts pass every ARG below from settings.ps1 (Versions).
+# AGENT_VERSION and INSTALL_POWERSHELL are required; both are checked in the first RUN so a
+# missing value fails fast.
+ARG AGENT_VERSION
 
-# --- Feature toggles (pass via --build-arg; empty = feature not installed) ---
+# --- Feature toggles (pass via --build-arg; empty or unset = feature not installed) ---
 # No INSTALL_PODMAN here: rootless nested containers have no mature Windows-container
-# equivalent, so this toggle is Linux-only (see Dockerfile.linux).
-ARG INSTALL_JAVA=17
+# equivalent, so this toggle is Linux-only (see dockerfile.linux).
+ARG INSTALL_JAVA
 # INSTALL_ANDROID carries the Android build-tools version to install, e.g. 34.0.0; its major component is used as the platform (API) version. Requires INSTALL_JAVA to be set.
-ARG INSTALL_ANDROID=37.0.0
-# Current latest cmdline-tools build from https://developer.android.com/studio#command-tools; override via --build-arg to pin an older one.
-ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
-ARG INSTALL_POWERSHELL=7.6.6
-ARG INSTALL_DOTNET=10.0
-ARG INSTALL_NODE=24.21.0
+ARG INSTALL_ANDROID
+# cmdline-tools build number from https://developer.android.com/studio#command-tools; required when INSTALL_ANDROID is set.
+ARG ANDROID_CMDLINE_TOOLS_VERSION
+ARG INSTALL_POWERSHELL
+ARG INSTALL_DOTNET
+ARG INSTALL_NODE
 
 # --- PowerShell 7 (pwsh) ---
 # Unconditional, unlike every other toolchain here: Servercore only ships Windows PowerShell 5.1,
 # and the entrypoint (entrypoint.ps1) itself needs pwsh to run. INSTALL_POWERSHELL still pins the
 # version installed, for parity with the Linux image's toggle.
-RUN $psMajor = $env:INSTALL_POWERSHELL.Split('.')[0]; `
+RUN if (-not $env:AGENT_VERSION) { Write-Error 'AGENT_VERSION build arg is required'; exit 1 }; `
+    if (-not $env:INSTALL_POWERSHELL) { Write-Error 'INSTALL_POWERSHELL build arg is required'; exit 1 }; `
+    $psMajor = $env:INSTALL_POWERSHELL.Split('.')[0]; `
     Invoke-WebRequest -Uri "https://github.com/PowerShell/PowerShell/releases/download/v$($env:INSTALL_POWERSHELL)/PowerShell-$($env:INSTALL_POWERSHELL)-win-x64.msi" -OutFile C:\powershell.msi; `
     Start-Process msiexec.exe -ArgumentList '/i', 'C:\powershell.msi', '/quiet', '/norestart' -Wait; `
     Remove-Item C:\powershell.msi; `
@@ -53,6 +58,7 @@ ENV ANDROID_SDK_ROOT=${ANDROID_HOME}
 ENV PATH="${INSTALL_ANDROID:+C:\android-sdk\cmdline-tools\latest\bin;C:\android-sdk\platform-tools;}${PATH}"
 
 RUN if ($env:INSTALL_ANDROID) { `
+      if (-not $env:ANDROID_CMDLINE_TOOLS_VERSION) { Write-Error 'ANDROID_CMDLINE_TOOLS_VERSION build arg is required when INSTALL_ANDROID is set'; exit 1 }; `
       $androidPlatformVersion = $env:INSTALL_ANDROID.Split('.')[0]; `
       New-Item -ItemType Directory -Force -Path C:\android-sdk\cmdline-tools | Out-Null; `
       Invoke-WebRequest -Uri "https://dl.google.com/android/repository/commandlinetools-win-$($env:ANDROID_CMDLINE_TOOLS_VERSION)_latest.zip" -OutFile C:\cmdline-tools.zip; `

@@ -1,10 +1,12 @@
 FROM dustynv/ollama:r36.4.0
 
-ARG OLLAMA_VERSION=0.24.0
+# No default: build.ps1 passes it from settings.ps1 (or the latest release).
+ARG OLLAMA_VERSION
 
 # zstd is only needed by install.sh to extract the .tar.zst release archives, so it is removed again
 # in the same layer once Ollama is installed.
-RUN apt-get update && \
+RUN [ -n "$OLLAMA_VERSION" ] || { echo "error: OLLAMA_VERSION build arg is required" >&2; exit 1; } && \
+    apt-get update && \
     apt-get install -y zstd && \
     curl -fsSL https://ollama.com/install.sh | OLLAMA_VERSION=${OLLAMA_VERSION} sh && \
     apt-get purge -y --auto-remove zstd && \

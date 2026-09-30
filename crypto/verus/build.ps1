@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 param(
 	[Parameter(Mandatory=$false)][ValidatePattern("^(0|[1-9][0-9]*)\.([1-9][0-9]*|0)+\.([1-9][0-9]*|0)(-.+)?$")][String]$version,
+	[Parameter(Mandatory=$false)][ValidateSet("none", "mine", "all")][String]$Squash,
 	[Parameter(Mandatory=$false)][switch]$NoCache,
 	[Parameter(Mandatory=$false)][switch]$SkipHubMetadata,
 	[Parameter(Mandatory=$false)][String]$HubUsername,
@@ -8,16 +9,27 @@ param(
 );
 
 . "$PSScriptRoot/../../scripts/dockerhub-common.ps1";
+. "$PSScriptRoot/../../scripts/build-settings.ps1";
+
+# Defaults come from settings.ps1; parameters passed on the command line take precedence.
+$settings = Import-BuildSettings -Path "$PSScriptRoot/settings.ps1" -BoundParameters $PSBoundParameters;
+if ($settings.Versions.version) { $version = $settings.Versions.version; }
+$NoCache = [bool]$settings.Build.NoCache;
+$SkipHubMetadata = [bool]$settings.Build.SkipHubMetadata;
+$HubUsername = $settings.Build.HubUsername;
+$repository = $settings.Build.Repository;
+$image = "$($settings.Build.Registry)/$($settings.Build.Repository)";
+$imageName = $settings.Build.ImageName;
 
 # With -HubToken, every Docker Hub operation below (pulls, pushes, metadata sync) uses that token
 # instead of the existing login; Exit-DockerHubSession undoes it even when the script exits early.
 try {
-	Enter-DockerHubSession -Repository "jnitecki/verus" -Tool podman -Username $HubUsername -Token $HubToken;
+	Enter-DockerHubSession -Repository $repository -Tool podman -Username $HubUsername -Token $HubToken;
 
 	# Check up front that the Docker Hub metadata sync at the end would be allowed, rather than
 	# finding out only after the image has been built and pushed.
 	if (-not $SkipHubMetadata) {
-		Assert-DockerHubWriteAccess -Repository "jnitecki/verus";
+		Assert-DockerHubWriteAccess -Repository $repository;
 	}
 
 	# Find the latest version if not provided
@@ -43,23 +55,23 @@ try {
 	} else {
 		Start-Process -NoNewWindow -FilePath podman -ArgumentList (@("machine", "ssh", "--", "sudo", "podman") + $binfmtArgs) -PassThru -Wait | Out-Null;
 	}
-	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "docker.io/jnitecki/verus:latest", "docker.io/jnitecki/verus:$version", "jnitecki/verus:$version") -PassThru -Wait | Out-Null;
-	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", "linux/amd64,linux/arm64", "--squash", "-f", "dockerfile", "--manifest", "verus:$version", "--manifest", "jnitecki/verus:$version", "--build-arg", "CLI_VERSION=$version");
+	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "${image}:latest", "${image}:$version", "${repository}:$version") -PassThru -Wait | Out-Null;
+	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", ($settings.Build.Platforms -join ","), "-f", "dockerfile", "--manifest", "${imageName}:$version", "--manifest", "${repository}:$version", "--build-arg", "CLI_VERSION=$version") + (Get-SquashArgs -Squash $settings.Build.Squash -Tool podman);
 	if ($NoCache) {
 		$buildArgs += "--no-cache";
 	}
 	$buildArgs += "build-context";
 
 	Start-Process -noNewWindow -filePath podman -ArgumentList $buildArgs -PassThru -Wait | Out-Null;
-	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "verus:$version", "docker.io/jnitecki/verus:$version", "docker.io/jnitecki/verus:latest") -PassThru -Wait | Out-Null;
-	Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("docker.io/jnitecki/verus:$version")) -PassThru -Wait | Out-Null;
-	$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("docker.io/jnitecki/verus:latest")) -PassThru -Wait;
+	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "${imageName}:$version", "${image}:$version", "${image}:latest") -PassThru -Wait | Out-Null;
+	Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("${image}:$version")) -PassThru -Wait | Out-Null;
+	$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("${image}:latest")) -PassThru -Wait;
 
 	if ($SkipHubMetadata) {
 		Write-Host "Skipping Docker Hub README upload (-SkipHubMetadata).";
 	} elseif ($pushResult.ExitCode -eq 0) {
 		$hubMetadata = Import-HubMetadata -Path "$PSScriptRoot/hub-metadata.yml";
-		Publish-DockerHubRepository -Repository "jnitecki/verus" -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
+		Publish-DockerHubRepository -Repository $repository -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
 	} else {
 		Write-Warning "Skipping Docker Hub README upload because the image push failed (exit code $($pushResult.ExitCode)).";
 	}

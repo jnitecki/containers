@@ -1,25 +1,28 @@
 FROM ubuntu:24.04
-ARG AGENT_VERSION=4.248.0
+# No version defaults: the build scripts pass every ARG below from settings.ps1 (Versions).
+# AGENT_VERSION is required; it is checked in the first RUN so a missing value fails fast.
+ARG AGENT_VERSION
 
-# --- Feature toggles (pass via --build-arg; empty = feature not installed) ---
-ARG INSTALL_PODMAN=true
-ARG INSTALL_BUILD_ESSENTIAL=true
+# --- Feature toggles (pass via --build-arg; empty or unset = feature not installed) ---
+ARG INSTALL_PODMAN
+ARG INSTALL_BUILD_ESSENTIAL
 # INSTALL_PYTHON_DEV requires INSTALL_BUILD_ESSENTIAL=true (native extension builds need gcc).
-ARG INSTALL_PYTHON_DEV=true
-ARG INSTALL_JAVA=17
+ARG INSTALL_PYTHON_DEV
+ARG INSTALL_JAVA
 # INSTALL_ANDROID carries the Android build-tools version to install, e.g. 34.0.0; its major component is used as the platform (API) version. Requires INSTALL_JAVA to be set.
-ARG INSTALL_ANDROID=37.0.0
-# Current latest cmdline-tools build from https://developer.android.com/studio#command-tools; override via --build-arg to pin an older one.
-ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
+ARG INSTALL_ANDROID
+# cmdline-tools build number from https://developer.android.com/studio#command-tools; required when INSTALL_ANDROID is set.
+ARG ANDROID_CMDLINE_TOOLS_VERSION
 # INSTALL_ANDROID_EMULATOR: an Android API level (e.g. 36) installs the emulator plus that level's default
 # x86_64 system image; "true" installs the emulator only. Requires INSTALL_ANDROID to be set. Ignored on
 # arm64: no Android emulator is published for Linux arm64 hosts.
-ARG INSTALL_ANDROID_EMULATOR=36
-ARG INSTALL_POWERSHELL=7.6.6
-ARG INSTALL_DOTNET=10.0
-ARG INSTALL_NODE=24.21.0
+ARG INSTALL_ANDROID_EMULATOR
+ARG INSTALL_POWERSHELL
+ARG INSTALL_DOTNET
+ARG INSTALL_NODE
 
-RUN apt-get update && apt-get install -y \
+RUN [ -n "$AGENT_VERSION" ] || { echo "error: AGENT_VERSION build arg is required" >&2; exit 1; } && \
+    apt-get update && apt-get install -y \
     ca-certificates curl jq git pipx iputils-ping libicu-dev tar unzip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -79,6 +82,9 @@ ENV PATH="${ANDROID_HOME:+${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOM
 ENV ANDROID_HOME_${INSTALL_ANDROID%%.*}=${INSTALL_ANDROID:+/opt/android-sdk}
 
 RUN if [ -n "$INSTALL_ANDROID" ]; then \
+      if [ -z "$ANDROID_CMDLINE_TOOLS_VERSION" ]; then \
+        echo "error: ANDROID_CMDLINE_TOOLS_VERSION build arg is required when INSTALL_ANDROID is set" >&2; exit 1; \
+      fi && \
       ANDROID_PLATFORM_MAJOR="${INSTALL_ANDROID%%.*}" && \
       ANDROID_PLATFORM_MAJOR_MINOR="${INSTALL_ANDROID%.*}" && \
       mkdir -p "${ANDROID_HOME}/cmdline-tools" && \

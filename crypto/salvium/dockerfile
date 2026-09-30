@@ -4,8 +4,9 @@ FROM ubuntu:latest
 RUN apt-get update && apt-get install -y wget unzip && apt-get clean
 
 # Install Salvium Node
-ARG CLI_VERSION=1.1.3c
-RUN case "$(uname -m)" in \
+ARG CLI_VERSION
+RUN [ -n "$CLI_VERSION" ] || { echo "error: CLI_VERSION build arg is required" >&2; exit 1; } && \
+    case "$(uname -m)" in \
       x86_64) SALVIUM_ARCH=x86_64 ;; \
       aarch64) SALVIUM_ARCH=aarch64 ;; \
       *) echo "unsupported arch $(uname -m)" && exit 1 ;; \

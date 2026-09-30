@@ -2,6 +2,7 @@
 param(
 	[Parameter(Mandatory=$false)][ValidatePattern("^(0|[1-9][0-9]*)\.([1-9][0-9]*|0)+\.([1-9][0-9]*|0)$")][String]$baseVersion,
 	[Parameter(Mandatory=$false)][ValidatePattern("^(0|[1-9][0-9]*)\.([1-9][0-9]*|0)+\.([1-9][0-9]*|0)$")][String]$cliVersion,
+	[Parameter(Mandatory=$false)][ValidateSet("none", "mine", "all")][String]$Squash,
 	[Parameter(Mandatory=$false)][switch]$NoCache,
 	[Parameter(Mandatory=$false)][switch]$SkipHubMetadata,
 	[Parameter(Mandatory=$false)][String]$HubUsername,
@@ -9,16 +10,28 @@ param(
 );
 
 . "$PSScriptRoot/../../scripts/dockerhub-common.ps1";
+. "$PSScriptRoot/../../scripts/build-settings.ps1";
+
+# Defaults come from settings.ps1; parameters passed on the command line take precedence.
+$settings = Import-BuildSettings -Path "$PSScriptRoot/settings.ps1" -BoundParameters $PSBoundParameters;
+if ($settings.Versions.baseVersion) { $baseVersion = $settings.Versions.baseVersion; }
+if ($settings.Versions.cliVersion) { $cliVersion = $settings.Versions.cliVersion; }
+$NoCache = [bool]$settings.Build.NoCache;
+$SkipHubMetadata = [bool]$settings.Build.SkipHubMetadata;
+$HubUsername = $settings.Build.HubUsername;
+$repository = $settings.Build.Repository;
+$image = "$($settings.Build.Registry)/$($settings.Build.Repository)";
+$imageName = $settings.Build.ImageName;
 
 # With -HubToken, every Docker Hub operation below (pulls, pushes, metadata sync) uses that token
 # instead of the existing login; Exit-DockerHubSession undoes it even when the script exits early.
 try {
-	Enter-DockerHubSession -Repository "jnitecki/zephyr" -Tool podman -Username $HubUsername -Token $HubToken;
+	Enter-DockerHubSession -Repository $repository -Tool podman -Username $HubUsername -Token $HubToken;
 
 	# Check up front that the Docker Hub metadata sync at the end would be allowed, rather than
 	# finding out only after the image has been built and pushed.
 	if (-not $SkipHubMetadata) {
-		Assert-DockerHubWriteAccess -Repository "jnitecki/zephyr";
+		Assert-DockerHubWriteAccess -Repository $repository;
 	}
 
 	# Zephyr Protocol releases have occasionally shipped CLI zip assets whose embedded version lags
@@ -54,23 +67,23 @@ try {
 	} else {
 		Start-Process -NoNewWindow -FilePath podman -ArgumentList (@("machine", "ssh", "--", "sudo", "podman") + $binfmtArgs) -PassThru -Wait | Out-Null;
 	}
-	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "docker.io/jnitecki/zephyr:latest", "docker.io/jnitecki/zephyr:$cliVersion", "jnitecki/zephyr:$cliVersion") -PassThru -Wait | Out-Null;
-	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", "linux/amd64,linux/arm64", "--squash", "-f", "dockerfile", "--manifest", "zephyr:$cliVersion", "--manifest", "jnitecki/zephyr:$cliVersion", "--build-arg", "BASE_VERSION=$baseVersion", "--build-arg", "CLI_VERSION=$cliVersion");
+	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "${image}:latest", "${image}:$cliVersion", "${repository}:$cliVersion") -PassThru -Wait | Out-Null;
+	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", ($settings.Build.Platforms -join ","), "-f", "dockerfile", "--manifest", "${imageName}:$cliVersion", "--manifest", "${repository}:$cliVersion", "--build-arg", "BASE_VERSION=$baseVersion", "--build-arg", "CLI_VERSION=$cliVersion") + (Get-SquashArgs -Squash $settings.Build.Squash -Tool podman);
 	if ($NoCache) {
 		$buildArgs += "--no-cache";
 	}
 	$buildArgs += "build-context";
 
 	Start-Process -noNewWindow -filePath podman -ArgumentList $buildArgs -PassThru -Wait | Out-Null;
-	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "zephyr:$cliVersion", "docker.io/jnitecki/zephyr:$cliVersion", "docker.io/jnitecki/zephyr:latest") -PassThru -Wait | Out-Null;
-	Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("docker.io/jnitecki/zephyr:$cliVersion")) -PassThru -Wait | Out-Null;
-	$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("docker.io/jnitecki/zephyr:latest")) -PassThru -Wait;
+	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "${imageName}:$cliVersion", "${image}:$cliVersion", "${image}:latest") -PassThru -Wait | Out-Null;
+	Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("${image}:$cliVersion")) -PassThru -Wait | Out-Null;
+	$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("${image}:latest")) -PassThru -Wait;
 
 	if ($SkipHubMetadata) {
 		Write-Host "Skipping Docker Hub README upload (-SkipHubMetadata).";
 	} elseif ($pushResult.ExitCode -eq 0) {
 		$hubMetadata = Import-HubMetadata -Path "$PSScriptRoot/hub-metadata.yml";
-		Publish-DockerHubRepository -Repository "jnitecki/zephyr" -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
+		Publish-DockerHubRepository -Repository $repository -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
 	} else {
 		Write-Warning "Skipping Docker Hub README upload because the image push failed (exit code $($pushResult.ExitCode)).";
 	}

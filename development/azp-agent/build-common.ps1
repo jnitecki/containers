@@ -1,8 +1,8 @@
 # Shared helpers for build-linux.ps1 / build-windows.ps1. Dot-source this file:
 #   . "$PSScriptRoot/build-common.ps1"
 
-# Maps each versions.json field to the Dockerfile ARG it feeds, and which Dockerfile(s) that
-# ARG is expected to exist in (INSTALL_PODMAN, INSTALL_BUILD_ESSENTIAL, INSTALL_PYTHON_DEV and
+# Maps each settings.ps1 Versions key to the dockerfile ARG it feeds, and which dockerfile(s) that
+# ARG exists in (INSTALL_PODMAN, INSTALL_BUILD_ESSENTIAL, INSTALL_PYTHON_DEV and
 # INSTALL_ANDROID_EMULATOR have no Windows counterpart).
 $script:VersionArgMap = @(
     @{ Field = "installPodman";              Arg = "INSTALL_PODMAN";                Linux = $true; Windows = $false }
@@ -35,81 +35,23 @@ function Resolve-AgentVersion {
     return $resolved
 }
 
-function Get-PinnedVersions {
-    $versionsPath = Join-Path $PSScriptRoot "versions.json"
-    return Get-Content $versionsPath -Raw | ConvertFrom-Json
-}
-
-function Get-DockerfileArgDefault {
-    param(
-        [Parameter(Mandatory = $true)][String]$DockerfilePath,
-        [Parameter(Mandatory = $true)][String]$ArgName
-    )
-
-    $match = Select-String -Path $DockerfilePath -Pattern "^ARG\s+$ArgName=(.*)$" | Select-Object -First 1
-    if (-not $match) {
-        return $null
-    }
-    return $match.Matches[0].Groups[1].Value.Trim()
-}
-
-# Fails the build if either Dockerfile's ARG defaults have drifted from versions.json, so a
-# plain `docker build`/`podman build` without --build-arg stays consistent between OSes and
-# with the pinned versions this repo publishes.
-function Assert-VersionsInSync {
-    $pins = Get-PinnedVersions
-    $linuxDockerfile = Join-Path $PSScriptRoot "Dockerfile.linux"
-    $windowsDockerfile = Join-Path $PSScriptRoot "Dockerfile.windows"
-    $mismatches = @()
-
-    foreach ($entry in $script:VersionArgMap) {
-        $pinned = [String]$pins.($entry.Field)
-
-        if ($entry.Linux) {
-            $actual = Get-DockerfileArgDefault -DockerfilePath $linuxDockerfile -ArgName $entry.Arg
-            if ($actual -ne $pinned) {
-                $mismatches += "Dockerfile.linux: ARG $($entry.Arg) default is '$actual', versions.json has '$pinned'"
-            }
-        }
-        if ($entry.Windows) {
-            $actual = Get-DockerfileArgDefault -DockerfilePath $windowsDockerfile -ArgName $entry.Arg
-            if ($actual -ne $pinned) {
-                $mismatches += "Dockerfile.windows: ARG $($entry.Arg) default is '$actual', versions.json has '$pinned'"
-            }
-        }
-    }
-
-    $pinnedAgentVersion = [String]$pins.agentVersion
-    $linuxAgentDefault = Get-DockerfileArgDefault -DockerfilePath $linuxDockerfile -ArgName "AGENT_VERSION"
-    $windowsAgentDefault = Get-DockerfileArgDefault -DockerfilePath $windowsDockerfile -ArgName "AGENT_VERSION"
-    if ($linuxAgentDefault -ne $pinnedAgentVersion) {
-        $mismatches += "Dockerfile.linux: ARG AGENT_VERSION default is '$linuxAgentDefault', versions.json has '$pinnedAgentVersion'"
-    }
-    if ($windowsAgentDefault -ne $pinnedAgentVersion) {
-        $mismatches += "Dockerfile.windows: ARG AGENT_VERSION default is '$windowsAgentDefault', versions.json has '$pinnedAgentVersion'"
-    }
-
-    if ($mismatches.Count -gt 0) {
-        Write-Error "versions.json is out of sync with Dockerfile ARG defaults:`n$($mismatches -join "`n")"
-        exit 1
-    }
-}
-
-# Returns the versions.json toolchain fields as a flat --build-arg argument list, filtered to
-# the ARGs that actually exist on the given OS's Dockerfile (e.g. INSTALL_PODMAN is excluded
+# Returns the settings.ps1 Versions toolchain keys as a flat --build-arg argument list, filtered to
+# the ARGs that actually exist on the given OS's dockerfile (e.g. INSTALL_PODMAN is excluded
 # for Windows). AGENT_VERSION is handled separately by the caller since it can be overridden
 # per-invocation via -version.
 function Get-ToolchainBuildArgs {
-    param([Parameter(Mandatory = $true)][ValidateSet("Linux", "Windows")][String]$Os)
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet("Linux", "Windows")][String]$Os,
+        [Parameter(Mandatory = $true)][Hashtable]$Versions
+    )
 
-    $pins = Get-PinnedVersions
     $result = @()
     foreach ($entry in $script:VersionArgMap) {
         if (($Os -eq "Linux" -and -not $entry.Linux) -or ($Os -eq "Windows" -and -not $entry.Windows)) {
             continue
         }
         $result += "--build-arg"
-        $result += "$($entry.Arg)=$([String]$pins.($entry.Field))"
+        $result += "$($entry.Arg)=$([String]$Versions[$entry.Field])"
     }
     return $result
 }

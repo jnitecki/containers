@@ -2,6 +2,7 @@
 param(
 	[Parameter(Mandatory=$false)][ValidatePattern("^(0|[1-9][0-9]*)\.([1-9][0-9]*|0)+\.([1-9][0-9]*|0)\.([1-9][0-9]*|0)$")][String]$daemonVersion,
 	[Parameter(Mandatory=$false)][ValidatePattern("^(0|[1-9][0-9]*)\.([1-9][0-9]*|0)+$")][String]$poolVersion,
+	[Parameter(Mandatory=$false)][ValidateSet("none", "mine", "all")][String]$Squash,
 	[Parameter(Mandatory=$false)][switch]$NoCache,
 	[Parameter(Mandatory=$false)][switch]$SkipHubMetadata,
 	[Parameter(Mandatory=$false)][String]$HubUsername,
@@ -9,16 +10,28 @@ param(
 );
 
 . "$PSScriptRoot/../../scripts/dockerhub-common.ps1";
+. "$PSScriptRoot/../../scripts/build-settings.ps1";
+
+# Defaults come from settings.ps1; parameters passed on the command line take precedence.
+$settings = Import-BuildSettings -Path "$PSScriptRoot/settings.ps1" -BoundParameters $PSBoundParameters;
+if ($settings.Versions.daemonVersion) { $daemonVersion = $settings.Versions.daemonVersion; }
+if ($settings.Versions.poolVersion) { $poolVersion = $settings.Versions.poolVersion; }
+$NoCache = [bool]$settings.Build.NoCache;
+$SkipHubMetadata = [bool]$settings.Build.SkipHubMetadata;
+$HubUsername = $settings.Build.HubUsername;
+$repository = $settings.Build.Repository;
+$image = "$($settings.Build.Registry)/$($settings.Build.Repository)";
+$imageName = $settings.Build.ImageName;
 
 # With -HubToken, every Docker Hub operation below (pulls, pushes, metadata sync) uses that token
 # instead of the existing login; Exit-DockerHubSession undoes it even when the script exits early.
 try {
-	Enter-DockerHubSession -Repository "jnitecki/monero" -Tool podman -Username $HubUsername -Token $HubToken;
+	Enter-DockerHubSession -Repository $repository -Tool podman -Username $HubUsername -Token $HubToken;
 
 	# Check up front that the Docker Hub metadata sync at the end would be allowed, rather than
 	# finding out only after the image has been built and pushed.
 	if (-not $SkipHubMetadata) {
-		Assert-DockerHubWriteAccess -Repository "jnitecki/monero";
+		Assert-DockerHubWriteAccess -Repository $repository;
 	}
 
 	# Find the latest daemon version if not provided
@@ -58,23 +71,23 @@ try {
 	} else {
 		Start-Process -NoNewWindow -FilePath podman -ArgumentList (@("machine", "ssh", "--", "sudo", "podman") + $binfmtArgs) -PassThru -Wait | Out-Null;
 	}
-	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "docker.io/jnitecki/monero:latest", "docker.io/jnitecki/monero:$tag", "jnitecki/monero:$tag") -PassThru -Wait | Out-Null;
-	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", "linux/amd64,linux/arm64", "--squash", "-f", "dockerfile", "--manifest", "monero:$tag", "--manifest", "jnitecki/monero:$tag", "--build-arg", "DAEMON_VERSION=$daemonVersion", "--build-arg", "P2POOL_VERSION=$poolVersion");
+	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "${image}:latest", "${image}:$tag", "${repository}:$tag") -PassThru -Wait | Out-Null;
+	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", ($settings.Build.Platforms -join ","), "-f", "dockerfile", "--manifest", "${imageName}:$tag", "--manifest", "${repository}:$tag", "--build-arg", "DAEMON_VERSION=$daemonVersion", "--build-arg", "P2POOL_VERSION=$poolVersion") + (Get-SquashArgs -Squash $settings.Build.Squash -Tool podman);
 	if ($NoCache) {
 		$buildArgs += "--no-cache";
 	}
 	$buildArgs += "build-context";
 
 	Start-Process -noNewWindow -filePath podman -ArgumentList $buildArgs -PassThru -Wait | Out-Null;
-	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "monero:$tag", "docker.io/jnitecki/monero:$tag", "docker.io/jnitecki/monero:latest") -PassThru -Wait | Out-Null;
-	Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("docker.io/jnitecki/monero:$tag")) -PassThru -Wait | Out-Null;
-	$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("docker.io/jnitecki/monero:latest")) -PassThru -Wait;
+	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "${imageName}:$tag", "${image}:$tag", "${image}:latest") -PassThru -Wait | Out-Null;
+	Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("${image}:$tag")) -PassThru -Wait | Out-Null;
+	$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("${image}:latest")) -PassThru -Wait;
 
 	if ($SkipHubMetadata) {
 		Write-Host "Skipping Docker Hub README upload (-SkipHubMetadata).";
 	} elseif ($pushResult.ExitCode -eq 0) {
 		$hubMetadata = Import-HubMetadata -Path "$PSScriptRoot/hub-metadata.yml";
-		Publish-DockerHubRepository -Repository "jnitecki/monero" -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
+		Publish-DockerHubRepository -Repository $repository -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
 	} else {
 		Write-Warning "Skipping Docker Hub README upload because the image push failed (exit code $($pushResult.ExitCode)).";
 	}

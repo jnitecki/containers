@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 param(
 	[Parameter(Mandatory=$false)][ValidatePattern("^(0|[1-9][0-9]*)\.([1-9][0-9]*|0)+\.([1-9][0-9]*|0)$")][String]$ollamaVersion,
+	[Parameter(Mandatory=$false)][ValidateSet("none", "mine", "all")][String]$Squash,
 	[Parameter(Mandatory=$false)][switch]$NoCache,
 	[Parameter(Mandatory=$false)][switch]$SkipHubMetadata,
 	[Parameter(Mandatory=$false)][String]$HubUsername,
@@ -8,16 +9,27 @@ param(
 );
 
 . "$PSScriptRoot/../../scripts/dockerhub-common.ps1";
+. "$PSScriptRoot/../../scripts/build-settings.ps1";
+
+# Defaults come from settings.ps1; parameters passed on the command line take precedence.
+$settings = Import-BuildSettings -Path "$PSScriptRoot/settings.ps1" -BoundParameters $PSBoundParameters;
+if ($settings.Versions.ollamaVersion) { $ollamaVersion = $settings.Versions.ollamaVersion; }
+$NoCache = [bool]$settings.Build.NoCache;
+$SkipHubMetadata = [bool]$settings.Build.SkipHubMetadata;
+$HubUsername = $settings.Build.HubUsername;
+$repository = $settings.Build.Repository;
+$image = "$($settings.Build.Registry)/$($settings.Build.Repository)";
+$imageName = $settings.Build.ImageName;
 
 # With -HubToken, every Docker Hub operation below (pulls, pushes, metadata sync) uses that token
 # instead of the existing login; Exit-DockerHubSession undoes it even when the script exits early.
 try {
-	Enter-DockerHubSession -Repository "jnitecki/ollama" -Tool podman -Username $HubUsername -Token $HubToken;
+	Enter-DockerHubSession -Repository $repository -Tool podman -Username $HubUsername -Token $HubToken;
 
 	# Check up front that the Docker Hub metadata sync at the end would be allowed, rather than
 	# finding out only after the image has been built and pushed.
 	if (-not $SkipHubMetadata) {
-		Assert-DockerHubWriteAccess -Repository "jnitecki/ollama";
+		Assert-DockerHubWriteAccess -Repository $repository;
 	}
 
 	# Find the latest Ollama version if not provided
@@ -45,23 +57,23 @@ try {
 	} else {
 		Start-Process -NoNewWindow -FilePath podman -ArgumentList (@("machine", "ssh", "--", "sudo", "podman") + $binfmtArgs) -PassThru -Wait | Out-Null;
 	}
-	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "docker.io/jnitecki/ollama:latest", "docker.io/jnitecki/ollama:$ollamaVersion", "jnitecki/ollama:$ollamaVersion") -PassThru -Wait | Out-Null;
-	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", "linux/arm64", "--network", "host", "--squash", "-f", "$PSScriptRoot/dockerfile", "--manifest", "ollama:$ollamaVersion", "--manifest", "jnitecki/ollama:$ollamaVersion", "--build-arg", "OLLAMA_VERSION=$ollamaVersion");
+	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "${image}:latest", "${image}:$ollamaVersion", "${repository}:$ollamaVersion") -PassThru -Wait | Out-Null;
+	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", ($settings.Build.Platforms -join ","), "--network", "host", "-f", "$PSScriptRoot/dockerfile", "--manifest", "${imageName}:$ollamaVersion", "--manifest", "${repository}:$ollamaVersion", "--build-arg", "OLLAMA_VERSION=$ollamaVersion") + (Get-SquashArgs -Squash $settings.Build.Squash -Tool podman);
 	if ($NoCache) {
 		$buildArgs += "--no-cache";
 	}
 	$buildArgs += "$PSScriptRoot/build-context";
 
 	Start-Process -noNewWindow -filePath podman -ArgumentList $buildArgs -PassThru -Wait | Out-Null;
-	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "ollama:$ollamaVersion", "docker.io/jnitecki/ollama:$ollamaVersion", "docker.io/jnitecki/ollama:latest") -PassThru -Wait | Out-Null;
-	Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("docker.io/jnitecki/ollama:$ollamaVersion")) -PassThru -Wait | Out-Null;
-	$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("docker.io/jnitecki/ollama:latest")) -PassThru -Wait;
+	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "${imageName}:$ollamaVersion", "${image}:$ollamaVersion", "${image}:latest") -PassThru -Wait | Out-Null;
+	Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("${image}:$ollamaVersion")) -PassThru -Wait | Out-Null;
+	$pushResult = Start-Process -noNewWindow -filePath podman -ArgumentList (@("manifest", "push") + (Get-DockerHubAuthArgs) + @("${image}:latest")) -PassThru -Wait;
 
 	if ($SkipHubMetadata) {
 		Write-Host "Skipping Docker Hub README upload (-SkipHubMetadata).";
 	} elseif ($pushResult.ExitCode -eq 0) {
 		$hubMetadata = Import-HubMetadata -Path "$PSScriptRoot/hub-metadata.yml";
-		Publish-DockerHubRepository -Repository "jnitecki/ollama" -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
+		Publish-DockerHubRepository -Repository $repository -ReadmePath "$PSScriptRoot/README.md" -Description $hubMetadata.ShortDescription -Categories $hubMetadata.Categories;
 	} else {
 		Write-Warning "Skipping Docker Hub README upload because the image push failed (exit code $($pushResult.ExitCode)).";
 	}
