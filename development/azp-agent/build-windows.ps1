@@ -14,6 +14,13 @@ param(
 	[Parameter(Mandatory=$false)][SecureString]$HubToken
 );
 
+# Windows images can only be built by Docker on a Windows host, so fail with a clear message rather
+# than an obscure docker error elsewhere; build-linux.ps1 runs on Linux, macOS and Windows hosts.
+if (-not $IsWindows) {
+	Write-Error "build-windows.ps1 must run on a Windows host with Docker in Windows-containers mode.";
+	exit 1;
+}
+
 . "$PSScriptRoot/build-common.ps1";
 . "$PSScriptRoot/../../scripts/dockerhub-common.ps1";
 . "$PSScriptRoot/../../scripts/build-settings.ps1";
@@ -29,6 +36,11 @@ $image = "$($settings.Build.Registry)/$($settings.Build.Repository)";
 
 # With -HubToken, every Docker Hub operation below (pulls, pushes, metadata sync) uses that token
 # instead of the existing login; Exit-DockerHubSession undoes it even when the script exits early.
+# The build runs from the script's own directory, so the relative dockerfile/context paths below work
+# wherever the script is started from; Pop-Location restores the caller's location, also on exit.
+# Relative rather than $PSScriptRoot-based paths also keep Start-Process, which joins -ArgumentList
+# with plain spaces, safe when the repository sits under a path containing spaces.
+Push-Location -LiteralPath $PSScriptRoot;
 try {
 	Enter-DockerHubSession -Repository $repository -Tool docker -Username $HubUsername -Token $HubToken;
 
@@ -61,4 +73,5 @@ try {
 	}
 } finally {
 	Exit-DockerHubSession;
+	Pop-Location;
 }

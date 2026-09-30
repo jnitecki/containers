@@ -23,6 +23,11 @@ $imageName = $settings.Build.ImageName;
 
 # With -HubToken, every Docker Hub operation below (pulls, pushes, metadata sync) uses that token
 # instead of the existing login; Exit-DockerHubSession undoes it even when the script exits early.
+# The build runs from the script's own directory, so the relative dockerfile/context paths below work
+# wherever the script is started from; Pop-Location restores the caller's location, also on exit.
+# Relative rather than $PSScriptRoot-based paths also keep Start-Process, which joins -ArgumentList
+# with plain spaces, safe when the repository sits under a path containing spaces.
+Push-Location -LiteralPath $PSScriptRoot;
 try {
 	Enter-DockerHubSession -Repository $repository -Tool podman -Username $HubUsername -Token $HubToken;
 
@@ -58,11 +63,11 @@ try {
 		Start-Process -NoNewWindow -FilePath podman -ArgumentList (@("machine", "ssh", "--", "sudo", "podman") + $binfmtArgs) -PassThru -Wait | Out-Null;
 	}
 	Start-Process -noNewWindow -filePath podman -ArgumentList ("manifest", "rm", "-i", "${image}:latest", "${image}:$ollamaVersion", "${repository}:$ollamaVersion") -PassThru -Wait | Out-Null;
-	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", ($settings.Build.Platforms -join ","), "--network", "host", "-f", "$PSScriptRoot/dockerfile", "--manifest", "${imageName}:$ollamaVersion", "--manifest", "${repository}:$ollamaVersion", "--build-arg", "OLLAMA_VERSION=$ollamaVersion") + (Get-SquashArgs -Squash $settings.Build.Squash -Tool podman);
+	$buildArgs = @("build") + (Get-DockerHubAuthArgs) + @("--platform", ($settings.Build.Platforms -join ","), "--network", "host", "-f", "dockerfile", "--manifest", "${imageName}:$ollamaVersion", "--manifest", "${repository}:$ollamaVersion", "--build-arg", "OLLAMA_VERSION=$ollamaVersion") + (Get-SquashArgs -Squash $settings.Build.Squash -Tool podman);
 	if ($NoCache) {
 		$buildArgs += "--no-cache";
 	}
-	$buildArgs += "$PSScriptRoot/build-context";
+	$buildArgs += "build-context";
 
 	Start-Process -noNewWindow -filePath podman -ArgumentList $buildArgs -PassThru -Wait | Out-Null;
 	Start-Process -noNewWindow -filePath podman -ArgumentList ("tag", "${imageName}:$ollamaVersion", "${image}:$ollamaVersion", "${image}:latest") -PassThru -Wait | Out-Null;
@@ -79,4 +84,5 @@ try {
 	}
 } finally {
 	Exit-DockerHubSession;
+	Pop-Location;
 }

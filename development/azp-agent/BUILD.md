@@ -9,6 +9,8 @@ Two buildable variants share the same feature set (Java, Android SDK, PowerShell
 | Linux   | `ubuntu:24.04`                            | `dockerfile.linux`   | `linux-context/`   | `build-linux.ps1`   |
 | Windows | `mcr.microsoft.com/windows/servercore`    | `dockerfile.windows` | `windows-context/` | `build-windows.ps1` |
 
+`build-linux.ps1` runs on Linux, macOS and Windows hosts (Podman; on macOS/Windows through the Podman machine). `build-windows.ps1` needs a Windows host with Docker in Windows-containers mode and aborts on any other host. Both can be started from any directory, e.g. `./build-linux.ps1` here or `development/azp-agent/build-linux.ps1` from the repository root.
+
 > **Windows variant status:** first-draft, not yet build-verified against a real Windows container host — see [Verification](#verification) below before relying on it in production.
 
 ## Build

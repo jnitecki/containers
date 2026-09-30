@@ -19,7 +19,17 @@ function Get-DockerHubCredential {
 		return @{ Username = $env:DOCKERHUB_USERNAME; Password = $env:DOCKERHUB_TOKEN };
 	}
 
-	$configPaths = @(
+	# Podman's own lookup order: REGISTRY_AUTH_FILE, then ${XDG_RUNTIME_DIR}/containers/auth.json
+	# (where rootless `podman login` writes on Linux), then ~/.config/containers/auth.json (macOS and
+	# Windows, where XDG_RUNTIME_DIR is normally unset); Docker's ~/.docker/config.json last.
+	$configPaths = @();
+	if (-not [String]::IsNullOrEmpty($env:REGISTRY_AUTH_FILE)) {
+		$configPaths += $env:REGISTRY_AUTH_FILE;
+	}
+	if (-not [String]::IsNullOrEmpty($env:XDG_RUNTIME_DIR)) {
+		$configPaths += (Join-Path $env:XDG_RUNTIME_DIR "containers/auth.json");
+	}
+	$configPaths += @(
 		(Join-Path $HOME ".config/containers/auth.json"),
 		(Join-Path $HOME ".docker/config.json")
 	);
@@ -179,7 +189,7 @@ function Assert-DockerHubWriteAccess {
 
 	$credential = Get-DockerHubCredential;
 	if (-not $credential) {
-		Write-Error "No Docker Hub credentials found (checked DOCKERHUB_USERNAME/DOCKERHUB_TOKEN, ~/.config/containers/auth.json, ~/.docker/config.json). Run 'podman login docker.io', or pass -HubToken, with a Personal Access Token that has Read & Write scope. $skipHint";
+		Write-Error "No Docker Hub credentials found (checked DOCKERHUB_USERNAME/DOCKERHUB_TOKEN, REGISTRY_AUTH_FILE, `$XDG_RUNTIME_DIR/containers/auth.json, ~/.config/containers/auth.json, ~/.docker/config.json). Run 'podman login docker.io', or pass -HubToken, with a Personal Access Token that has Read & Write scope. $skipHint";
 		exit 1;
 	}
 
@@ -321,7 +331,7 @@ function Publish-DockerHubRepository {
 
 	$credential = Get-DockerHubCredential;
 	if (-not $credential) {
-		Write-Warning "No Docker Hub credentials found (checked DOCKERHUB_USERNAME/DOCKERHUB_TOKEN, ~/.config/containers/auth.json, ~/.docker/config.json) - skipping Docker Hub metadata update. The credential's password must be a Docker Hub Personal Access Token with Read & Write scope.";
+		Write-Warning "No Docker Hub credentials found (checked DOCKERHUB_USERNAME/DOCKERHUB_TOKEN, REGISTRY_AUTH_FILE, `$XDG_RUNTIME_DIR/containers/auth.json, ~/.config/containers/auth.json, ~/.docker/config.json) - skipping Docker Hub metadata update. The credential's password must be a Docker Hub Personal Access Token with Read & Write scope.";
 		return;
 	}
 
