@@ -45,6 +45,8 @@ Neither package is version-pinned (both come from Ubuntu's apt repo), so `entryp
 
 The Android emulator is handled the same way, but installing it is not enough on its own: `entrypoint.sh` runs `$ANDROID_HOME/emulator/emulator -accel-check` at start and exports `ANDROID_EMULATOR` (path to the emulator binary) and `ANDROID_EMULATOR_<api>` (the same path, one per installed `system-images/android-<api>`) only if that check succeeds, i.e. only when the container can actually use hardware acceleration (`/dev/kvm`).
 
+Podman is different: the Dockerfile sets `PODMAN` (path to podman, `/usr/bin/podman`) whenever `installPodman` is set, and `entrypoint.sh` keeps it only if the container runs `--privileged`, since nested Podman doesn't work reliably otherwise. The checks are: `CapBnd` in `/proc/self/status` holds every capability up to `/proc/sys/kernel/cap_last_cap` (`CapBnd`, not `CapEff`, which is 0 for a non-root user either way); `Seccomp` is `0`; `/proc/self/attr/current` shows no AppArmor `(enforce)`/`(complain)` profile or SELinux `container_t` label; neither `/proc/sys` nor `/sys` is mounted `ro`; and `/dev` has at least 30 entries (host devices are exposed). The first failed check is logged as a warning and `PODMAN` is unset.
+
 Example disabling everything but Podman on Linux:
 
 ```sh

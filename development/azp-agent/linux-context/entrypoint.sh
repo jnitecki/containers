@@ -50,6 +50,63 @@ fi
 if command -v python3-config > /dev/null; then
   export PYTHON_DEV="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 fi
+
+# Nested Podman only works reliably in a --privileged container, so keep PODMAN (path to podman,
+# set in the dockerfile) only if it is installed and every privileged-mode check below passes.
+podman_not_privileged() {
+  # Capability bounding set must hold every capability the kernel knows. CapEff is no use here:
+  # it is 0 for a non-root user whether or not the container is privileged.
+  local cap_last cap_bnd
+  cap_last="$(cat /proc/sys/kernel/cap_last_cap 2> /dev/null)" || cap_last=40
+  cap_bnd="$(awk '/^CapBnd:/ {print $2}' /proc/self/status)"
+  if [ -z "$cap_bnd" ] || (( (16#$cap_bnd & ((1 << (cap_last + 1)) - 1)) != (1 << (cap_last + 1)) - 1 )); then
+    echo "capability bounding set is restricted (CapBnd: ${cap_bnd:-unknown})"
+    return 0
+  fi
+
+  # --privileged disables seccomp (0 = none, 2 = filtered) and AppArmor/SELinux confinement.
+  local seccomp lsm_label
+  seccomp="$(awk '/^Seccomp:/ {print $2}' /proc/self/status)"
+  if [ -n "$seccomp" ] && [ "$seccomp" != "0" ]; then
+    echo "seccomp filtering is active (Seccomp: $seccomp)"
+    return 0
+  fi
+  lsm_label="$(tr -d '\0' < /proc/self/attr/current 2> /dev/null)" || lsm_label=""
+  case "$lsm_label" in
+    *"(enforce)"*|*"(complain)"*|*":container_t:"*)
+      echo "process is confined by a security profile ($lsm_label)"
+      return 0
+      ;;
+  esac
+
+  # /proc/sys and /sys are mounted read-only in an unprivileged container.
+  local ro_mounts
+  ro_mounts="$(awk '($2 == "/proc/sys" || $2 == "/sys") && $4 ~ /(^|,)ro(,|$)/ {print $2}' /proc/mounts | tr '\n' ' ')"
+  if [ -n "$ro_mounts" ]; then
+    echo "read-only system mounts: ${ro_mounts% }"
+    return 0
+  fi
+
+  # A privileged container sees all host devices (dozens+); an unprivileged one only ~15.
+  local dev_count
+  dev_count="$(ls /dev | wc -l)"
+  if (( dev_count < 30 )); then
+    echo "only $dev_count entries in /dev (host devices are not exposed)"
+    return 0
+  fi
+
+  return 1
+}
+if [ -n "$PODMAN" ] && [ ! -x "$PODMAN" ]; then
+  unset PODMAN
+elif [ -n "$PODMAN" ]; then
+  if podman_reason="$(podman_not_privileged)"; then
+    echo 1>&2 "warning: container is not running --privileged ($podman_reason); nested Podman will not work, PODMAN capability not reported"
+    unset PODMAN
+  fi
+  unset podman_reason
+fi
+unset -f podman_not_privileged
 # The emulator is only usable with hardware acceleration (e.g. /dev/kvm passed into the
 # container), so report it only when -accel-check succeeds, plus one ANDROID_EMULATOR_<api>
 # per installed system image.

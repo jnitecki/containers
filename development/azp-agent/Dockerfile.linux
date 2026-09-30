@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Podman support (optional, nested containers) ---
+# PODMAN (path to podman) is kept by entrypoint.sh only if the container runs --privileged.
 RUN if [ "$INSTALL_PODMAN" = "true" ]; then \
       apt-get update && apt-get install -y \
         podman fuse-overlayfs uidmap slirp4netns iptables \
@@ -36,6 +37,7 @@ RUN if [ "$INSTALL_PODMAN" = "true" ]; then \
         > /etc/containers/containers.conf \
       && rm -rf /var/lib/apt/lists/*; \
     fi
+ENV PODMAN=${INSTALL_PODMAN:+/usr/bin/podman}
 # --- end Podman support ---
 
 # --- Build essentials (optional, native C/C++ toolchain: gcc, g++, make, libc dev headers) ---
