@@ -71,7 +71,8 @@ $existing = & $tool ps -a --format "{{.Names}}" | Where-Object { $_ -match '^azp
 foreach ($name in $existing) {
 	Write-Host "Stopping and removing existing container $name...";
 	& $tool stop $name | Out-Null;
-	& $tool rm $name | Out-Null;
+	# -v also removes the container's anonymous volumes (e.g. /var/lib/containers below).
+	& $tool rm -v $name | Out-Null;
 }
 
 $hostName = ([System.Net.Dns]::GetHostName()).ToUpper();
@@ -80,15 +81,29 @@ $runArgs = @("run", "-d", "--restart", "unless-stopped");
 if ($Os -eq "Linux") {
 	# Windows containers have no equivalent to these Linux cgroup/capability flags.
 	$runArgs += @("--privileged");
+
+	# When the host runs Podman and the image has nested Podman installed (the image sets PODMAN
+	# only then), its storage goes on an anonymous volume, so the nested fuse-overlayfs sits on the
+	# host's normal filesystem (e.g. WSL2's ext4 disk) instead of on the container's own overlay -
+	# as quay.io/podman/stable does. Not needed under Docker.
+	if ($tool -eq "podman") {
+		$imageEnv = & $tool image inspect --format "{{json .Config.Env}}" $Image | ConvertFrom-Json;
+		if ($imageEnv | Where-Object { $_ -match '^PODMAN=.+' }) {
+			$runArgs += @("-v", "/var/lib/containers");
+		}
+	}
 }
 $runArgs += @("-e", "AZP_URL=$AzpUrl", "-e", "AZP_TOKEN=$AzpToken", "-e", "AZP_POOL=$AzpPool");
 
 # Optional: falls back to the AZP_RUN_ONCE environment variable, then to the image default (true).
-if ([String]::IsNullOrEmpty($RunOnce)) {
-	$RunOnce = [Environment]::GetEnvironmentVariable("AZP_RUN_ONCE");
+# Resolved into a separate variable: $RunOnce keeps its ValidateSet, so assigning an unset
+# (empty) environment variable to it would fail.
+$runOnceValue = $RunOnce;
+if ([String]::IsNullOrEmpty($runOnceValue)) {
+	$runOnceValue = [Environment]::GetEnvironmentVariable("AZP_RUN_ONCE");
 }
-if (-not [String]::IsNullOrEmpty($RunOnce)) {
-	$runArgs += @("-e", "AZP_RUN_ONCE=$RunOnce");
+if (-not [String]::IsNullOrEmpty($runOnceValue)) {
+	$runArgs += @("-e", "AZP_RUN_ONCE=$runOnceValue");
 }
 
 if ($PSBoundParameters.ContainsKey('InstanceCount')) {

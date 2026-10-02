@@ -47,7 +47,7 @@ The Linux agent reports these variables as capabilities, so pipelines can `deman
 | `PYTHON_DEV` | Python development headers (`python3-dev`) are installed | Python version the headers are for, e.g. `3.12` |
 | `ANDROID_EMULATOR` | The Android emulator is installed **and** `emulator -accel-check` succeeds at container start | Path to the emulator, e.g. `/opt/android-sdk/emulator/emulator` |
 | `ANDROID_EMULATOR_<api>` | As `ANDROID_EMULATOR`, one per installed emulator system image | Path to the emulator, e.g. `ANDROID_EMULATOR_36=/opt/android-sdk/emulator/emulator` |
-| `PODMAN` | Podman is installed **and** the container runs `--privileged` | Path to podman, e.g. `/usr/bin/podman` |
+| `PODMAN` | Podman is installed **and** a test container started at container start runs successfully | Path to podman, e.g. `/usr/bin/podman` |
 
 ```yaml
 pool:
@@ -59,9 +59,11 @@ pool:
 
 The emulator is only included in the amd64 image (Google publishes no Linux arm64 emulator). It needs hardware acceleration, so the container must be given access to KVM (e.g. `--device /dev/kvm`, or `--privileged` as `run.ps1` does) on a host that supports it. Without it, the emulator stays installed but `ANDROID_EMULATOR*` are not reported, so jobs that demand them won't be routed to this agent.
 
-Nested Podman needs the container to run `--privileged` (as `run.ps1` does). At start the agent checks for that: full capability bounding set, no seccomp filter or AppArmor/SELinux confinement, writable `/proc/sys` and `/sys`, and host devices visible in `/dev`. If any check fails, it logs a warning naming the failed check and removes `PODMAN`.
+Nested Podman needs the container to run `--privileged` (as `run.ps1` does). When running the container with Podman, also give nested Podman's storage its own volume, e.g. `-v /var/lib/containers` (as `run.ps1` does when it runs the container with Podman and the image includes Podman). The volume then sits on the host's normal filesystem (e.g. WSL2's ext4 disk) instead of on the container's own overlay, so the nested fuse-overlayfs works on top of a regular filesystem. The official `quay.io/podman/stable` image is set up the same way.
 
-If you have this repository cloned, `run.ps1` scripts the above: it pulls the current image, stops/removes any previous `azp-agent`/`azp-agent-NN` container(s), and starts fresh one(s). `-AzpUrl`/`-AzpToken`/`-AzpPool` are optional — if omitted, each falls back to the matching `AZP_URL`/`AZP_TOKEN`/`AZP_POOL` environment variable, then to a hardcoded default at the top of the script (empty by default; fill in locally, never commit real values), and the script fails fast if a value is still missing. `-RunOnce true|false` sets `AZP_RUN_ONCE` the same way (parameter, then environment variable), but if neither is given the image default applies.
+At start, before registering, the agent checks that nested Podman actually works by running a small test container. The test needs no registry or network access: it builds a throwaway local image from the agent's own shell binaries, runs it with `--cgroups=disabled --network=none` and a read-only bind mount, creates a directory inside it, and removes the image again. If the test fails, the agent logs a warning with the error and removes `PODMAN`, so jobs that demand it are not routed to this agent. If Podman's image storage is on an overlay or FUSE filesystem, the warning also suggests mounting a volume at `/var/lib/containers`. The test adds some time to each container start (each job with the default `AZP_RUN_ONCE=true`) and gives up after 2 minutes per step.
+
+If you have this repository cloned, `run.ps1` scripts the above: it pulls the current image, stops/removes any previous `azp-agent`/`azp-agent-NN` container(s) together with their anonymous volumes, and starts fresh one(s). `-AzpUrl`/`-AzpToken`/`-AzpPool` are optional — if omitted, each falls back to the matching `AZP_URL`/`AZP_TOKEN`/`AZP_POOL` environment variable, then to a hardcoded default at the top of the script (empty by default; fill in locally, never commit real values), and the script fails fast if a value is still missing. `-RunOnce true|false` sets `AZP_RUN_ONCE` the same way (parameter, then environment variable), but if neither is given the image default applies.
 
 ```powershell
 # Single Linux agent named after this host, using the latest image

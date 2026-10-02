@@ -27,7 +27,7 @@ RUN [ -n "$AGENT_VERSION" ] || { echo "error: AGENT_VERSION build arg is require
     && rm -rf /var/lib/apt/lists/*
 
 # --- Podman support (optional, nested containers) ---
-# PODMAN (path to podman) is kept by entrypoint.sh only if the container runs --privileged.
+# PODMAN (path to podman) is kept by entrypoint.sh only if a nested test container runs successfully.
 RUN if [ "$INSTALL_PODMAN" = "true" ]; then \
       apt-get update && apt-get install -y \
         podman fuse-overlayfs uidmap slirp4netns iptables \
