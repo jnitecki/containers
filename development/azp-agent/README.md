@@ -18,6 +18,9 @@ Both variants expect the standard Azure Pipelines agent environment variables:
 | `AZP_POOL` | Agent pool name to register into (defaults to `Default`). |
 | `AZP_AGENT_NAME` | Optional; defaults to the container's own hostname if unset. |
 | `AZP_WORK` | Optional working directory (defaults to `_work`). |
+| `AZP_RUN_ONCE` | Optional; `true` (default) runs a single job, then the agent deregisters and the container exits. `false` keeps the agent registered and taking jobs until the container is stopped. Also accepts `1`/`0` and `yes`/`no`. |
+
+With the default `AZP_RUN_ONCE=true`, run the container with a restart policy (e.g. `--restart unless-stopped`, as `run.ps1` does) so a fresh agent registers after every job. Note that a restarted container keeps its filesystem, so to start each job from a clean environment, run a new container (e.g. `--rm` plus an external supervisor) instead of restarting the old one.
 
 ```sh
 docker run -e AZP_URL=https://dev.azure.com/<org> \
@@ -58,7 +61,7 @@ The emulator is only included in the amd64 image (Google publishes no Linux arm6
 
 Nested Podman needs the container to run `--privileged` (as `run.ps1` does). At start the agent checks for that: full capability bounding set, no seccomp filter or AppArmor/SELinux confinement, writable `/proc/sys` and `/sys`, and host devices visible in `/dev`. If any check fails, it logs a warning naming the failed check and removes `PODMAN`.
 
-If you have this repository cloned, `run.ps1` scripts the above: it pulls the current image, stops/removes any previous `azp-agent`/`azp-agent-NN` container(s), and starts fresh one(s). `-AzpUrl`/`-AzpToken`/`-AzpPool` are optional — if omitted, each falls back to the matching `AZP_URL`/`AZP_TOKEN`/`AZP_POOL` environment variable, then to a hardcoded default at the top of the script (empty by default; fill in locally, never commit real values), and the script fails fast if a value is still missing.
+If you have this repository cloned, `run.ps1` scripts the above: it pulls the current image, stops/removes any previous `azp-agent`/`azp-agent-NN` container(s), and starts fresh one(s). `-AzpUrl`/`-AzpToken`/`-AzpPool` are optional — if omitted, each falls back to the matching `AZP_URL`/`AZP_TOKEN`/`AZP_POOL` environment variable, then to a hardcoded default at the top of the script (empty by default; fill in locally, never commit real values), and the script fails fast if a value is still missing. `-RunOnce true|false` sets `AZP_RUN_ONCE` the same way (parameter, then environment variable), but if neither is given the image default applies.
 
 ```powershell
 # Single Linux agent named after this host, using the latest image
@@ -66,6 +69,9 @@ If you have this repository cloned, `run.ps1` scripts the above: it pulls the cu
 
 # Three Linux agents: azp-agent-01..03, named <hostname>-01..03
 ./run.ps1 -AzpUrl https://dev.azure.com/<org> -AzpToken <pat> -AzpPool <pool> -InstanceCount 3
+
+# Persistent agent that keeps taking jobs instead of exiting after one
+./run.ps1 -AzpUrl https://dev.azure.com/<org> -AzpToken <pat> -AzpPool <pool> -RunOnce false
 
 # Windows variant, explicit version
 ./run.ps1 -AzpUrl https://dev.azure.com/<org> -AzpToken <pat> -AzpPool <pool> -Os Windows -Version 4.248.0

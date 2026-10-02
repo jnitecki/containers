@@ -28,6 +28,16 @@ if [ -n "$AZP_WORK" ]; then
   mkdir -p "$AZP_WORK"
 fi
 
+# AZP_RUN_ONCE (default true): run a single job, then exit (and deregister); false keeps the agent running.
+case "${AZP_RUN_ONCE:-true}" in
+  [Tt][Rr][Uu][Ee]|1|[Yy][Ee][Ss]) run_args=(--once) ;;
+  [Ff][Aa][Ll][Ss][Ee]|0|[Nn][Oo]) run_args=() ;;
+  *)
+    echo 1>&2 "error: invalid AZP_RUN_ONCE value '$AZP_RUN_ONCE' (expected true or false)"
+    exit 1
+    ;;
+esac
+
 export AGENT_ALLOW_RUNASROOT="1"
 
 # Some build tools (e.g. Gradle toolchains) auto-detect JDKs via JAVA_HOME_<version>_<arch>;
@@ -166,6 +176,6 @@ trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
 # To be aware of TERM and INT signals call run.sh
-# Running it with the --once flag at the end will shut down the agent after the build is executed
+# Running it with the --once flag (AZP_RUN_ONCE) will shut down the agent after the build is executed
 
-./run.sh --once & wait $!
+./run.sh "${run_args[@]}" & wait $!

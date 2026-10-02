@@ -44,6 +44,17 @@ if ($env:AZP_WORK) {
     New-Item -ItemType Directory -Force -Path $env:AZP_WORK | Out-Null
 }
 
+# AZP_RUN_ONCE (default true): run a single job, then exit (and deregister); false keeps the agent running.
+$runOnce = if ($env:AZP_RUN_ONCE) { $env:AZP_RUN_ONCE } else { "true" }
+$runArgs = @(switch -Regex ($runOnce) {
+    '^(true|1|yes)$' { @("--once") }
+    '^(false|0|no)$' { @() }
+    default {
+        Write-Error "invalid AZP_RUN_ONCE value '$runOnce' (expected true or false)"
+        exit 1
+    }
+})
+
 # No AGENT_ALLOW_RUNASROOT here: that flag exists for a Linux/macOS root-user safeguard in the
 # vsts-agent that has no Windows container equivalent.
 
@@ -91,7 +102,7 @@ Write-Header "2. Running Azure Pipelines agent..."
 # real Windows container host and must be checked before relying on this for graceful agent
 # de-registration in production.
 try {
-    & .\run.cmd --once
+    & .\run.cmd @runArgs
 } finally {
     Invoke-Cleanup
 }

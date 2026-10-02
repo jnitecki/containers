@@ -5,6 +5,7 @@ param(
 	[Parameter(Mandatory=$false)][String]$AzpPool,
 	[Parameter(Mandatory=$false)][ValidateSet("Linux", "Windows")][String]$Os = "Linux",
 	[Parameter(Mandatory=$false)][String]$Version = "latest",
+	[Parameter(Mandatory=$false)][ValidateSet("true", "false")][String]$RunOnce,
 	[Parameter(Mandatory=$false, Position=0)][ValidateRange(1, 10)][int]$InstanceCount
 );
 
@@ -81,6 +82,14 @@ if ($Os -eq "Linux") {
 	$runArgs += @("--privileged");
 }
 $runArgs += @("-e", "AZP_URL=$AzpUrl", "-e", "AZP_TOKEN=$AzpToken", "-e", "AZP_POOL=$AzpPool");
+
+# Optional: falls back to the AZP_RUN_ONCE environment variable, then to the image default (true).
+if ([String]::IsNullOrEmpty($RunOnce)) {
+	$RunOnce = [Environment]::GetEnvironmentVariable("AZP_RUN_ONCE");
+}
+if (-not [String]::IsNullOrEmpty($RunOnce)) {
+	$runArgs += @("-e", "AZP_RUN_ONCE=$RunOnce");
+}
 
 if ($PSBoundParameters.ContainsKey('InstanceCount')) {
 	for ($i = 1; $i -le $InstanceCount; $i++) {
