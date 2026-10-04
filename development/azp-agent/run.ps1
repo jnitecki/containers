@@ -75,7 +75,7 @@ foreach ($name in $existing) {
 	& $tool rm -v $name | Out-Null;
 }
 
-$hostName = ([System.Net.Dns]::GetHostName()).ToUpper();
+$hostName = ([System.Net.Dns]::GetHostName()).Split('.')[0].ToUpper();
 
 $runArgs = @("run", "-d", "--restart", "unless-stopped");
 if ($Os -eq "Linux") {
